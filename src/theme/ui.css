@@ -224,3 +224,7 @@
   border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border)); background: color-mix(in srgb, var(--accent) 10%, var(--card2)); font-size: 13px; }
 .update-banner-icon { width: 16px; height: 16px; flex: none; color: var(--accent-text); }
 .update-banner-notes { color: var(--muted); font-size: 12px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* 数据源测试结果：单行标签，超长省略 */
+.ds-test { max-width: 100%; min-width: 0; flex: 0 1 auto; }
+.ds-test-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

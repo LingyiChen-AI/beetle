@@ -209,13 +209,21 @@ describe("数据源页", () => {
     const card = await screen.findByTestId("ds-demo_main");
     await userEvent.click(within(card).getByRole("button", { name: "测试连接 demo_main" }));
     expect(callsOf("test_datasource")).toEqual([{ ds: direct, alias: "demo_main", password: null }]);
-    expect(await within(card).findByTestId("ds-test-demo_main")).toHaveTextContent("连接成功，耗时 3 ms");
+    // 卡片上显示摘要标签（在按钮旁边，不另起一行），完整结果在悬停提示里
+    const chip = await within(card).findByTestId("ds-test-demo_main");
+    expect(chip).toHaveTextContent("已连通 · 3 ms");
+    expect(chip).toHaveAttribute("title", "连接成功，耗时 3 ms");
 
     await userEvent.click(within(card).getByRole("button", { name: "编辑 demo_main" }));
     const dialog = screen.getByRole("dialog");
     await userEvent.type(within(dialog).getByLabelText("密码"), "newpw");
     await userEvent.click(within(dialog).getByRole("button", { name: "测试连接" }));
     expect(callsOf("test_datasource")[1]).toEqual({ ds: direct, alias: "demo_main", password: "newpw" });
+    // 弹窗里的结果显示在底部按钮栏，紧挨着「测试连接」，不用滚动
+    const res = await within(dialog).findByTestId("ds-test-result");
+    expect(res.closest(".modal-foot, .ui-modal-foot, footer") ?? res.parentElement?.parentElement).toContainElement(
+      within(dialog).getByRole("button", { name: "测试连接" }),
+    );
   });
 
   test("测试连接失败显示原因", async () => {
@@ -223,7 +231,9 @@ describe("数据源页", () => {
     renderPage();
     const card = await screen.findByTestId("ds-demo_main");
     await userEvent.click(within(card).getByRole("button", { name: "测试连接 demo_main" }));
-    expect(await within(card).findByTestId("ds-test-demo_main")).toHaveTextContent("连接 127.0.0.1:3306 被拒绝");
+    const chip = await within(card).findByTestId("ds-test-demo_main");
+    expect(chip).toHaveTextContent("连接失败");
+    expect(chip.getAttribute("title")).toContain("连接 127.0.0.1:3306 被拒绝");
   });
 
   test("删除被项目引用的数据源：提示先取消关联，不能删", async () => {

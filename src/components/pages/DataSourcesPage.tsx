@@ -181,19 +181,28 @@ function skillOptions(skills: LocalSkill[]): SelectOption[] {
 
 type TestState = { ok: boolean; text: string } | "testing" | null;
 
-function TestResult({ state, testId }: { state: TestState; testId: string }) {
+/** 「连接成功，耗时 708 ms」→「已连通 · 708 ms」；失败显示「连接失败」，完整原因放在悬停提示里。 */
+function shortText(state: { ok: boolean; text: string }): string {
+  if (!state.ok) return "连接失败";
+  const ms = /(\d+)\s*ms/.exec(state.text);
+  return ms ? `已连通 · ${ms[1]} ms` : "已连通";
+}
+
+/** 测试结果：单行标签，放在「测试连接」按钮旁边。`full` 时失败原因直接显示（弹窗里空间够），否则只显示摘要。 */
+function TestResult({ state, testId, full }: { state: TestState; testId: string; full?: boolean }) {
   if (!state) return null;
   if (state === "testing")
     return (
-      <span className="chip c-mut" data-testid={testId}>
+      <span className="chip c-mut ds-test" data-testid={testId}>
         <PlugZap />
         测试中…
       </span>
     );
+  const text = full && !state.ok ? state.text : shortText(state);
   return (
-    <span className={`chip ${state.ok ? "c-ok" : "c-err"}`} data-testid={testId} title={state.text} style={{ maxWidth: "100%", whiteSpace: "normal", height: "auto", minHeight: 22, padding: "2px 8px" }}>
+    <span className={`chip ${state.ok ? "c-ok" : "c-err"} ds-test`} data-testid={testId} title={state.text} role="status">
       {state.ok ? <ShieldCheck /> : <Plug />}
-      {state.text}
+      <span className="ds-test-text">{text}</span>
     </span>
   );
 }
@@ -290,8 +299,8 @@ function DataSourceDialog({
               测试连接
             </button>
           )}
-          <span className="min-w-0 flex-1" style={{ color: "var(--dim)", fontSize: 12 }} data-testid="ds-problem">
-            {problem ?? ""}
+          <span className="flex min-w-0 flex-1 items-center" style={{ color: "var(--dim)", fontSize: 12 }}>
+            {test ? <TestResult state={test} testId="ds-test-result" full /> : <span data-testid="ds-problem">{problem ?? ""}</span>}
           </span>
           <button type="button" className="btn tr" disabled={busy} onClick={onClose}>
             取消
@@ -508,9 +517,8 @@ function DataSourceDialog({
           </>
         )}
       </div>
-      {(test || error) && (
+      {error && (
         <div className="grid" style={{ gap: 8, marginTop: 14 }}>
-          <TestResult state={test} testId="ds-test-result" />
           {error && (
             <div className="alert-err" role="alert">
               {error}
@@ -676,21 +684,19 @@ function DataSourceCard({
           )}
         </span>
         {ds.access === "direct" ? (
-          <button type="button" className="btn btn-sm tr" aria-label={`测试连接 ${alias}`} disabled={test === "testing"} onClick={() => void runTest()}>
-            <PlugZap />
-            测试连接
-          </button>
+          <>
+            <TestResult state={test === "testing" ? null : test} testId={`ds-test-${alias}`} />
+            <button type="button" className="btn btn-sm tr" aria-label={`测试连接 ${alias}`} disabled={test === "testing"} onClick={() => void runTest()}>
+              <PlugZap />
+              {test === "testing" ? "测试中…" : "测试连接"}
+            </button>
+          </>
         ) : (
           <span style={{ color: "var(--dim)" }} title="Beetle 不调用技能，由 Agent 运行时使用">
             由 Agent 调用技能
           </span>
         )}
       </div>
-      {test && (
-        <div style={{ padding: "0 16px 12px" }}>
-          <TestResult state={test} testId={`ds-test-${alias}`} />
-        </div>
-      )}
     </div>
   );
 }
