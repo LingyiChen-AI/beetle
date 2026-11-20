@@ -174,8 +174,17 @@ pub fn run() {
             std::thread::spawn(move || supervisor.start_autostart_bots(&envcheck::ensure_ready));
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("启动 Beetle 失败");
+        .build(tauri::generate_context!())
+        .expect("启动 Beetle 失败")
+        .run(|app, event| {
+            // macOS 点 Dock 图标：关窗口只是隐藏（见 tray::handle_window_event），这里要把它重新显示出来。
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                tray::show_main(app);
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app, event);
+        });
 }
 
 #[cfg(test)]
