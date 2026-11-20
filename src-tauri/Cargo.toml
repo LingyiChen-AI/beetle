@@ -1,6 +1,6 @@
 [package]
 name = "beetle"
-version = "0.1.10"
+version = "0.1.11"
 description = "甲虫（Beetle）：飞书群里的查 bug 机器人桌面客户端"
 edition = "2024"
 
