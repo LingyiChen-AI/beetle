@@ -246,7 +246,7 @@ function GroupCard({
   );
 }
 
-/** 给机器人加项目：选项目 + 选加到哪些群（默认全部群），合并进各群已有的负责项目。 */
+/** 设置机器人负责的项目：默认选中各群已有的项目；保存后所选群的「负责项目」就是这里选中的（新勾的加进去，取消的移除）。 */
 function AddProjectsDialog({
   botId,
   groups,
@@ -263,7 +263,8 @@ function AddProjectsDialog({
   onDone: () => Promise<void>;
 }) {
   const toast = useToast();
-  const [picked, setPicked] = useState<string[]>([]);
+  // 默认选中：所有群已有项目的并集（按项目页的顺序）
+  const [picked, setPicked] = useState<string[]>(() => projectNames.filter((n) => groups.some((g) => g.projects.includes(n))));
   const [targets, setTargets] = useState<string[]>(groups.map((g) => g.chat_id));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -273,10 +274,11 @@ function AddProjectsDialog({
     setError(null);
     try {
       for (const g of groups.filter((x) => targets.includes(x.chat_id))) {
-        const merged = [...g.projects, ...picked.filter((p) => !g.projects.includes(p))];
-        if (merged.length !== g.projects.length) await saveGroup(botId, { ...g, projects: merged });
+        // 保留群里已有项目的原顺序，新加的排在后面
+        const next = [...g.projects.filter((p) => picked.includes(p)), ...picked.filter((p) => !g.projects.includes(p))];
+        if (next.join("\n") !== g.projects.join("\n")) await saveGroup(botId, { ...g, projects: next });
       }
-      toast(`已把 ${picked.join("、")} 加到 ${targets.length} 个群`);
+      toast(picked.length ? `已保存：${targets.length} 个群负责 ${picked.join("、")}` : `已保存：${targets.length} 个群改用默认项目`);
       await onDone();
     } catch (e) {
       setError(errText(e));
@@ -289,8 +291,8 @@ function AddProjectsDialog({
     <Modal
       ariaLabel="添加项目"
       icon={FolderGit2}
-      title="给机器人添加项目"
-      subtitle="选中的项目会加进所选群的「负责项目」，机器人在这些群里查问题时会用到它们的代码和数据源"
+      title="机器人负责的项目"
+      subtitle="已负责的项目默认选中：勾选新项目即可添加，取消勾选会从所选群里移除；机器人在这些群里查问题时会用到它们的代码和数据源"
       width={560}
       onClose={onClose}
       closeDisabled={busy}
@@ -300,16 +302,16 @@ function AddProjectsDialog({
           <button type="button" className="btn tr" disabled={busy} onClick={onClose}>
             取消
           </button>
-          <button type="button" className="btn btn-pri tr" disabled={busy || picked.length === 0 || targets.length === 0} onClick={() => void submit()}>
+          <button type="button" className="btn btn-pri tr" disabled={busy || targets.length === 0} onClick={() => void submit()}>
             <Check />
-            {busy ? "保存中…" : "添加"}
+            {busy ? "保存中…" : "保存"}
           </button>
         </>
       }
     >
       <div className="grid" style={{ gap: 14 }}>
         <div>
-          <span className="lbl">项目（可多选）</span>
+          <span className="lbl">项目（可多选；都不选 = 用默认项目）</span>
           <ChipMultiSelect
             ariaLabel="要添加的项目"
             mono

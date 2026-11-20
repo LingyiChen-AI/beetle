@@ -272,10 +272,25 @@ describe("工作台 tab", () => {
     await userEvent.click(await screen.findByRole("tab", { name: /群/ }));
     await userEvent.click(screen.getByRole("button", { name: "添加项目" }));
     const dialog = screen.getByRole("dialog", { name: "添加项目" });
+    // 群里已有的 demo 默认选中
+    expect(within(dialog).getByRole("button", { name: "demo" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(dialog).getByRole("button", { name: "jev-rpa" })).toHaveAttribute("aria-pressed", "false");
     await userEvent.click(within(dialog).getByRole("button", { name: "jev-rpa" }));
-    await userEvent.click(within(dialog).getByRole("button", { name: "添加" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "保存" }));
     await waitFor(() => expect(callsOf("save_group")).toHaveLength(1));
     expect(callsOf("save_group")[0]).toMatchObject({ botId: "b1", group: { chat_id: "oc_1", projects: ["demo", "jev-rpa"] } });
+  });
+
+  test("群：「添加项目」里取消已有项目会从群里移除", async () => {
+    setHandlers(baseHandlers({ save_group: undefined }));
+    render(<App />);
+    await userEvent.click(await screen.findByRole("tab", { name: /群/ }));
+    await userEvent.click(screen.getByRole("button", { name: "添加项目" }));
+    const dialog = screen.getByRole("dialog", { name: "添加项目" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "demo" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(callsOf("save_group")).toHaveLength(1));
+    expect(callsOf("save_group")[0]).toMatchObject({ group: { chat_id: "oc_1", projects: [] } });
   });
 
   test("群：群卡片「负责项目」后面有「添加」，点了进入编辑", async () => {
