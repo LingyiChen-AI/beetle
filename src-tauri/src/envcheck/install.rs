@@ -221,7 +221,7 @@ fn wait_for_login(id: &str, probe: &dyn Probe, runner: &dyn Runner, on_line: &mu
             return Ok("登录完成".into());
         }
         let waited = LOGIN_POLL.as_secs() * round;
-        if waited % LOGIN_TICK.as_secs() == 0 {
+        if waited.is_multiple_of(LOGIN_TICK.as_secs()) {
             on_line(&format!("还在等待登录完成…（已等 {waited} 秒）"));
         }
     }

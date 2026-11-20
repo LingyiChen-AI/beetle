@@ -106,8 +106,11 @@ pub fn resolve_in(root: &Path, rel: &str) -> Result<PathBuf, String> {
     if p.is_absolute() || p.has_root() || p.components().any(|c| matches!(c, Component::Prefix(_) | Component::RootDir | Component::ParentDir)) {
         return Err(format!("只能读取技能目录里的相对路径：{rel}"));
     }
+    // 自己按正反斜杠切再拼，不靠 `Path` 的平台语义：Windows 端传来的 `scripts\run.py`
+    // 在 Unix 上会被当成一个含反斜杠的文件名，怎么都读不到。
+    let normalized: PathBuf = rel.split(['/', '\\']).filter(|s| !s.is_empty() && *s != ".").collect();
     let base = root.canonicalize().map_err(|e| format!("技能目录不可用：{e}"))?;
-    let full = base.join(p).canonicalize().map_err(|_| format!("文件不存在：{rel}"))?;
+    let full = base.join(&normalized).canonicalize().map_err(|_| format!("文件不存在：{rel}"))?;
     if !full.starts_with(&base) {
         return Err(format!("只能读取技能目录里的文件：{rel}"));
     }

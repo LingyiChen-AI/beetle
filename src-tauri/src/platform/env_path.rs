@@ -177,16 +177,15 @@ pub fn fallback_dirs() -> Vec<PathBuf> {
 #[cfg(unix)]
 fn version_dirs(root: &Path, suffix: &Path) -> Vec<PathBuf> {
     let Ok(rd) = std::fs::read_dir(root) else { return Vec::new() };
-    let mut found: Vec<(std::cmp::Reverse<(u32, u32, u32)>, String, PathBuf)> = rd
+    let mut found: Vec<(String, PathBuf)> = rd
         .flatten()
         .filter_map(|e| {
-            let name = e.file_name().to_string_lossy().into_owned();
             let bin = e.path().join(suffix);
-            bin.is_dir().then(|| (std::cmp::Reverse(version_key(&name)), name, bin))
+            bin.is_dir().then(|| (e.file_name().to_string_lossy().into_owned(), bin))
         })
         .collect();
-    found.sort();
-    found.into_iter().map(|(_, _, p)| p).collect()
+    found.sort_by(|(a, _), (b, _)| version_key(b).cmp(&version_key(a)).then_with(|| a.cmp(b)));
+    found.into_iter().map(|(_, p)| p).collect()
 }
 
 /// `v24.21.0` → (24, 21, 0)；认不出来的算 (0, 0, 0)。

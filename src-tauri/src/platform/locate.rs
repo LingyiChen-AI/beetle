@@ -5,9 +5,13 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 /// Windows 应用商店的 python 占位符（`...\WindowsApps\python.exe`）：存在但不是真正的解释器，运行只会弹商店。
+///
+/// 自己按正反斜杠切，不用 `Path::components`：判断的是一个 Windows 概念，但路径字符串可能在任何平台上
+/// 被检查（跨平台单测就是），而 Unix 的 `Path` 不把反斜杠当分隔符。
 pub fn is_store_stub(path: &Path) -> bool {
-    path.components()
-        .any(|c| c.as_os_str().to_string_lossy().eq_ignore_ascii_case("WindowsApps"))
+    path.to_string_lossy()
+        .split(['/', '\\'])
+        .any(|seg| seg.eq_ignore_ascii_case("WindowsApps"))
 }
 
 /// 在 `dirs` 里按顺序找可执行文件 `name`。Windows 优先 `.exe`，其次 npm 的 `.cmd` / `.bat`
