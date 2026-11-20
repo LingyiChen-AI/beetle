@@ -12,6 +12,8 @@ pub const CHECK_INTERVAL: Duration = Duration::from_secs(30 * 60);
 /// 启动后等这么久再做第一次检查（避开启动时的网络和磁盘高峰）。
 const FIRST_CHECK_DELAY: Duration = Duration::from_secs(20);
 pub const EVENT: &str = "update-available";
+/// 下载进度：`{downloaded, total}`（字节；total 可能为 null）。
+pub const PROGRESS_EVENT: &str = "update-progress";
 
 #[derive(Debug, Clone, Default, Serialize, PartialEq)]
 pub struct UpdateStatus {
@@ -94,8 +96,22 @@ pub async fn install_update(app: AppHandle) -> Result<(), String> {
         .await
         .map_err(|e| format!("检查更新失败：{e}"))?
         .ok_or("已经是最新版本")?;
+    // 下载进度推给界面（每多下 1% 左右推一次，避免事件太密）
+    let mut downloaded: u64 = 0;
+    let mut last_pct: i64 = -1;
+    let progress_app = app.clone();
     update
-        .download_and_install(|_, _| {}, || {})
+        .download_and_install(
+            move |chunk, total| {
+                downloaded += chunk as u64;
+                let pct = total.filter(|t| *t > 0).map(|t| (downloaded * 100 / t) as i64).unwrap_or(-1);
+                if pct != last_pct {
+                    last_pct = pct;
+                    let _ = progress_app.emit(PROGRESS_EVENT, serde_json::json!({ "downloaded": downloaded, "total": total }));
+                }
+            },
+            || {},
+        )
         .await
         .map_err(|e| format!("下载或安装更新失败：{e}"))?;
     app.restart();

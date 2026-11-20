@@ -519,6 +519,9 @@ export const checkUpdate = () => invoke<UpdateStatus>("check_update");
 export const installUpdate = () => invoke<void>("install_update");
 export const onUpdateAvailable = (cb: (s: UpdateStatus) => void): Promise<UnlistenFn> =>
   listen<UpdateStatus>("update-available", (e) => cb(e.payload));
+/** 下载进度（字节）；total 未知时为 null。 */
+export const onUpdateProgress = (cb: (p: { downloaded: number; total: number | null }) => void): Promise<UnlistenFn> =>
+  listen<{ downloaded: number; total: number | null }>("update-progress", (e) => cb(e.payload));
 
 /** 客户端版本号（tauri.conf.json 的 version）。 */
 export const getAppVersion = async (): Promise<string> => {

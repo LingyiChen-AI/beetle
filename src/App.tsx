@@ -195,6 +195,7 @@ function Shell() {
 
   return (
     <div className="app">
+      <UpdateBanner />
       <TitleBar onOpenSettings={() => setPage("settings")} />
       <div className="app-body">
         <Rail page={page} envIssues={envIssues} onGo={go} />
@@ -216,7 +217,6 @@ function Shell() {
           />
         )}
         <main className="main">
-          <UpdateBanner />
           {loadError && (
             <div className="alert-err" role="alert" style={{ margin: "12px 24px 0" }}>
               读取机器人失败：{loadError}

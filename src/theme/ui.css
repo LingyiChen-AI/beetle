@@ -219,11 +219,6 @@
   .ds-ssh { padding: 12px; border: 1px dashed var(--line); border-radius: 9px; background: color-mix(in srgb, var(--card2) 50%, transparent); }
 }
 
-/* 自动更新提示条 */
-.update-banner { display: flex; align-items: center; gap: 12px; margin: 12px 24px 0; padding: 10px 14px; border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border)); background: color-mix(in srgb, var(--accent) 10%, var(--card2)); font-size: 13px; }
-.update-banner-icon { width: 16px; height: 16px; flex: none; color: var(--accent-text); }
-.update-banner-notes { color: var(--muted); font-size: 12px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* 数据源测试结果：单行标签，超长省略 */
 .ds-test { max-width: 100%; min-width: 0; flex: 0 1 auto; }
@@ -244,3 +239,19 @@ table.t td.brk { overflow-wrap: anywhere; word-break: normal; min-width: 160px; 
 /* 群卡片「负责项目」后的添加按钮：虚线小标签 */
 .chip-add { border: 1px dashed var(--border); background: transparent; color: var(--muted); cursor: pointer; }
 .chip-add:hover { border-color: var(--accent); color: var(--accent-text); }
+
+/* 自动更新：右下角弹出卡片 */
+.update-card { position: fixed; right: 20px; bottom: 20px; width: 340px; z-index: 70; padding: 14px 14px 12px; border-radius: 12px;
+  background: var(--popover); border: 1px solid var(--border); box-shadow: var(--shadow-pop); font-size: 13px; animation: update-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1); }
+@keyframes update-in { from { opacity: 0; transform: translateY(16px) scale(0.98); } to { opacity: 1; transform: none; } }
+.update-card-icon { flex: none; width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent-text); }
+.update-card-icon svg { width: 18px; height: 18px; }
+.update-card-close { flex: none; width: 24px; height: 24px; margin: -4px -4px 0 0; border: 0; border-radius: 6px; background: transparent; color: var(--dim);
+  display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.update-card-close:hover { background: var(--hover); color: var(--fg); }
+.update-card-close svg { width: 14px; height: 14px; }
+.update-progress { height: 6px; border-radius: 3px; background: var(--subtle); overflow: hidden; }
+.update-progress-bar { height: 100%; border-radius: 3px; background: var(--accent); transition: width 0.25s ease; }
+.update-progress-bar.indeterminate { width: 35%; animation: update-indet 1.2s ease-in-out infinite; }
+@keyframes update-indet { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
