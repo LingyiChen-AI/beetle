@@ -1,6 +1,7 @@
 // 环境检查页：分组清单（运行环境 / 飞书与技能 / 网络），每项状态、版本、说明、操作；全部检查、一键修复全部；安装时展开实时输出。
 import {
   CircleCheck,
+  ClipboardList,
   CircleX,
   Download,
   ExternalLink,
@@ -42,6 +43,8 @@ const ID_ICON: Record<string, LucideIcon> = {
   git: GitBranch,
   lark_cli: Send,
   lark_login: Send,
+  meegle_cli: ClipboardList,
+  meegle_login: ClipboardList,
   ocr: ScanSearch,
   net_feishu: Wifi,
   net_anthropic: Globe,

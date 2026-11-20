@@ -2,7 +2,7 @@
 // Esc 关闭（只响应最上层弹窗），Tab 焦点锁在弹窗内，打开时聚焦第一个输入框（没有就聚焦弹窗本身），关闭后焦点还给打开前的元素。
 // 进出场动画用 components.css 的 fade / pop，系统开启「减少动态效果」时全局关掉。
 import { X, type LucideIcon } from "lucide-react";
-import { useEffect, useRef, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 
 /** 打开中的弹窗栈：Esc 只给最上层。 */
 const stack: symbol[] = [];
@@ -82,6 +82,35 @@ export function Modal({
       document.removeEventListener("keydown", onKey);
       stack.splice(stack.indexOf(me), 1);
       if (prev && document.contains(prev)) prev.focus({ preventScroll: true });
+    };
+  }, []);
+
+  // 居中后弹窗可能落在半个物理像素上（高度带小数、系统缩放 125% 等）。GPU 合成时，悬停控件的过渡会让它和周围内容
+  // 各自取整，表现为鼠标移动时整块内容上下抖 1px。这里把弹窗左上角对齐到整物理像素：flex 居中时 margin 只移一半，所以乘 2。
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const snap = () => {
+      el.style.marginTop = "";
+      el.style.marginLeft = "";
+      const r = el.getBoundingClientRect();
+      const d = window.devicePixelRatio || 1;
+      const fy = (Math.round(r.top * d) - r.top * d) / d;
+      const fx = (Math.round(r.left * d) - r.left * d) / d;
+      if (Math.abs(fy) > 0.01) el.style.marginTop = `${fy * 2}px`;
+      if (Math.abs(fx) > 0.01) el.style.marginLeft = `${fx * 2}px`;
+    };
+    snap();
+    const ro = new ResizeObserver(snap);
+    ro.observe(el);
+    if (el.parentElement) ro.observe(el.parentElement);
+    // 打开动画带 transform，量到的位置不准，动画结束再对齐一次
+    el.addEventListener("animationend", snap);
+    window.addEventListener("resize", snap);
+    return () => {
+      ro.disconnect();
+      el.removeEventListener("animationend", snap);
+      window.removeEventListener("resize", snap);
     };
   }, []);
 

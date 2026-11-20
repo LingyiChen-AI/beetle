@@ -74,6 +74,8 @@ pub fn plan_for(id: &str, kind: ActionKind, os: Os) -> Result<Plan, String> {
         ("codex", ActionKind::Install) => npm_plan("@openai/codex"),
         ("lark_cli" | "lark_login", ActionKind::Install) => npm_plan("@larksuite/cli"),
         ("ocr", ActionKind::Install) => npm_plan("@alibaba-group/open-code-review"),
+        ("meegle_cli" | "meegle_login", ActionKind::Install) => npm_plan("@lark-project/meegle"),
+        ("meegle_login", ActionKind::Login) => Plan::Terminal { args: s(&["meegle", "auth", "login"]) },
         ("claude", ActionKind::Login) => Plan::Terminal { args: s(&["claude", "auth", "login"]) },
         ("codex", ActionKind::Login) => Plan::Terminal { args: s(&["codex", "login"]) },
         ("lark_login", ActionKind::Login) => Plan::Terminal { args: s(&["lark-cli", "auth", "login"]) },

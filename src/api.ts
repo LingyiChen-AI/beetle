@@ -85,6 +85,88 @@ export interface RecordOpts {
   issue: boolean;
   /** 追加到群配置的飞书文档。 */
   feishu_doc: boolean;
+  /** 用飞书项目 CLI（meegle）建工单；同名工单已存在则追加评论。旧配置没有这个字段。 */
+  meegle?: boolean;
+  /** 以机器人主人身份建飞书任务。旧配置没有这个字段。 */
+  feishu_task?: boolean;
+}
+
+/** 飞书任务配置（config.rs FeishuTaskTarget）：都可不填。 */
+export interface FeishuTaskTarget {
+  tasklist_guid: string;
+  tasklist_name: string;
+  assignee_open_id: string;
+  assignee_name: string;
+  /** 截止 = 建任务后 N 天；0 不设 */
+  due_days: number;
+}
+export interface Tasklist {
+  guid: string;
+  name: string;
+}
+export interface LarkUserHit {
+  open_id: string;
+  name: string;
+  department: string;
+}
+
+/** 飞书项目工单配置（src-tauri/src/store/config.rs MeegleTarget）：登录 meegle 后从 CLI 拉出来选。 */
+export interface MeegleTarget {
+  project_key: string;
+  simple_name: string;
+  space_name: string;
+  work_item_type: string;
+  work_item_type_name: string;
+  /** 建单固定带上的字段；value 是 CLI 建单要的格式（选项 id，多选为 JSON 数组字符串） */
+  fields: { field_key: string; field_name: string; value: string; label: string }[];
+  /** 建单时由 AI 按问题判断的字段：存可选项，fallback = AI 没给值时用的选项 id */
+  ai_fields: MeegleAiField[];
+  assignee: { user_key: string; name: string } | null;
+  role: { role_id: string; role_name: string } | null;
+}
+
+export interface MeegleAiField {
+  field_key: string;
+  field_name: string;
+  field_type: string;
+  options: { id: string; name: string }[];
+  fallback: string | null;
+}
+
+export interface MeegleStatus {
+  installed: boolean;
+  logged_in: boolean;
+  host: string | null;
+  user: string | null;
+  error: string | null;
+}
+export interface MeegleSpace {
+  project_key: string;
+  simple_name: string;
+  name: string;
+}
+export interface MeegleType {
+  type_key: string;
+  name: string;
+}
+export interface MeegleFormField {
+  field_key: string;
+  field_name: string;
+  field_type: string;
+  options: { id: string; name: string }[];
+  default: string | null;
+  /** 建单时自动填的说明；有值时界面只展示 */
+  auto: string | null;
+}
+export interface MeegleForm {
+  fields: MeegleFormField[];
+  roles: { role_id: string; role_name: string }[];
+  suggested_role: string | null;
+}
+export interface MeegleUserHit {
+  user_key: string;
+  name: string;
+  email: string;
 }
 
 export interface Project {
@@ -100,6 +182,12 @@ export interface Project {
   issue_repo?: string | null;
   /** 读 token 的环境变量名；null = Gitee 用 GITEE_TOKEN、GitHub 用 GITHUB_TOKEN。 */
   token_env?: string | null;
+  /** 飞书项目工单配置；record.meegle 为 true 时用。 */
+  meegle?: MeegleTarget | null;
+  /** 飞书任务配置；record.feishu_task 为 true 时用。 */
+  feishu_task?: FeishuTaskTarget | null;
+  /** 记录规则（自然语言）：勾了多种方式时按问题类型挑着执行；null = 全部执行。 */
+  record_rule?: string | null;
 }
 
 /** check_issue_token 的结果：只有是否检测到和用户名，不含 token。 */
@@ -250,6 +338,13 @@ export const saveProject = (name: string, project: Project) => invoke<void>("sav
 export const removeProject = (name: string) => invoke<void>("remove_project", { name });
 /** 检测建 issue 用的 token（传表单里当前的项目，不必先保存）。只返回是否检测到与用户名。 */
 export const checkIssueToken = (project: Project) => invoke<IssueTokenStatus>("check_issue_token", { project });
+export const meegleStatus = () => invoke<MeegleStatus>("meegle_status");
+export const meegleSpaces = () => invoke<MeegleSpace[]>("meegle_spaces");
+export const meegleTypes = (projectKey: string) => invoke<MeegleType[]>("meegle_types", { projectKey });
+export const meegleForm = (projectKey: string, workItemType: string) => invoke<MeegleForm>("meegle_form", { projectKey, workItemType });
+export const meegleUsers = (query: string) => invoke<MeegleUserHit[]>("meegle_users", { query });
+export const larkTasklists = () => invoke<Tasklist[]>("lark_tasklists");
+export const larkUsers = (query: string) => invoke<LarkUserHit[]>("lark_users", { query });
 /** `password` 为 null / 空串 = 保留已保存的密码（编辑时留空不修改）。 */
 export const saveDatasource = (alias: string, ds: DataSource, password: string | null) =>
   invoke<void>("save_datasource", { alias, ds, password: password ? password : null });

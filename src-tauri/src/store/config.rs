@@ -127,12 +127,18 @@ pub struct RecordOpts {
     /// 追加到群配置的飞书文档。
     #[serde(default = "yes")]
     pub feishu_doc: bool,
+    /// 用飞书项目 CLI（meegle）在配置好的空间里建工单；同名工单已存在则追加评论。
+    #[serde(default)]
+    pub meegle: bool,
+    /// 用 lark-cli 以机器人主人的身份建飞书任务（可选放进任务清单、指定负责人）。
+    #[serde(default)]
+    pub feishu_task: bool,
 }
 
 impl RecordOpts {
     /// 没配置过时的默认值：仓库在 gitee.com / github.com 就建 issue；写飞书文档保持旧行为，默认开。
     pub fn default_for(repo: &str) -> Self {
-        RecordOpts { issue: crate::issue::platform_of(repo).is_some(), feishu_doc: true }
+        RecordOpts { issue: crate::issue::platform_of(repo).is_some(), feishu_doc: true, meegle: false, feishu_task: false }
     }
 }
 
@@ -150,6 +156,108 @@ pub struct Project {
     pub issue_repo: Option<String>,
     /// 读 token 的环境变量名；None = Gitee 用 `GITEE_TOKEN`、GitHub 用 `GITHUB_TOKEN`。token 本身不进配置。
     pub token_env: Option<String>,
+    /// 飞书项目工单配置；`record.meegle` 为 true 时用。
+    pub meegle: Option<MeegleTarget>,
+    /// 飞书任务配置；`record.feishu_task` 为 true 时用，None = 默认（不进清单、不指定负责人）。
+    pub feishu_task: Option<FeishuTaskTarget>,
+    /// 记录规则（自然语言）：勾了多种记录方式时，按问题类型挑着执行，如「调研类建飞书任务；bug 建 issue 和飞书项目工单再写文档」。
+    /// None = 勾选的方式全部执行。
+    pub record_rule: Option<String>,
+}
+
+/// 飞书项目工单的建单配置：在项目页登录飞书项目 CLI 后，从 CLI 拉空间、工单类型、必填字段选出来。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MeegleTarget {
+    /// 空间 project_key
+    pub project_key: String,
+    /// 空间短名（拼工单链接用），没有时用 project_key
+    #[serde(default)]
+    pub simple_name: String,
+    #[serde(default)]
+    pub space_name: String,
+    /// 工单类型 key，默认 issue（缺陷）
+    #[serde(default = "default_work_item_type")]
+    pub work_item_type: String,
+    #[serde(default)]
+    pub work_item_type_name: String,
+    /// 建单时固定带上的字段（必填下拉等），值已是 CLI 建单要的格式（选项 id，或多选的 JSON 数组字符串）
+    #[serde(default)]
+    pub fields: Vec<MeegleField>,
+    /// 建单时由 AI 按问题判断的字段（如优先级、涉及端、业务线）：存可选项，机器人选好用 `--field 名称=选项` 传给脚本
+    #[serde(default)]
+    pub ai_fields: Vec<MeegleAiField>,
+    /// 默认处理人：放进 `role` 这个角色
+    #[serde(default)]
+    pub assignee: Option<MeegleUser>,
+    #[serde(default)]
+    pub role: Option<MeegleRole>,
+}
+
+fn default_work_item_type() -> String {
+    "issue".to_string()
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MeegleField {
+    pub field_key: String,
+    #[serde(default)]
+    pub field_name: String,
+    pub value: String,
+    /// 界面上显示的选项名
+    #[serde(default)]
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MeegleAiField {
+    pub field_key: String,
+    #[serde(default)]
+    pub field_name: String,
+    #[serde(default)]
+    pub field_type: String,
+    /// 可选项；空 = 文本字段，AI 直接填文字
+    #[serde(default)]
+    pub options: Vec<MeegleOption>,
+    /// AI 没给值时用的选项 id（空间默认值）
+    #[serde(default)]
+    pub fallback: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MeegleOption {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MeegleUser {
+    pub user_key: String,
+    #[serde(default)]
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MeegleRole {
+    pub role_id: String,
+    #[serde(default)]
+    pub role_name: String,
+}
+
+/// 飞书任务的建任务配置：清单、负责人都可不选（不选 = 只建在主人自己名下）。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeishuTaskTarget {
+    #[serde(default)]
+    pub tasklist_guid: String,
+    #[serde(default)]
+    pub tasklist_name: String,
+    /// 负责人：lark-cli 应用下的 open_id
+    #[serde(default)]
+    pub assignee_open_id: String,
+    #[serde(default)]
+    pub assignee_name: String,
+    /// 截止日期 = 建任务后 N 天；0 = 不设
+    #[serde(default)]
+    pub due_days: u32,
 }
 
 /// 反序列化用：`record` 的默认值依赖 `repo`，serde 的字段默认值做不到，先读成这个再转换。
@@ -166,6 +274,12 @@ struct ProjectRaw {
     issue_repo: Option<String>,
     #[serde(default)]
     token_env: Option<String>,
+    #[serde(default)]
+    meegle: Option<MeegleTarget>,
+    #[serde(default)]
+    feishu_task: Option<FeishuTaskTarget>,
+    #[serde(default)]
+    record_rule: Option<String>,
 }
 
 impl From<ProjectRaw> for Project {
@@ -180,6 +294,9 @@ impl From<ProjectRaw> for Project {
             dbs: r.dbs,
             issue_repo: blank_none(r.issue_repo),
             token_env: blank_none(r.token_env),
+            meegle: r.meegle.filter(|m| !m.project_key.trim().is_empty()),
+            feishu_task: r.feishu_task,
+            record_rule: blank_none(r.record_rule),
         }
     }
 }
@@ -203,6 +320,9 @@ impl Project {
             dbs,
             issue_repo: None,
             token_env: None,
+            meegle: None,
+            feishu_task: None,
+            record_rule: None,
         }
     }
 
@@ -224,6 +344,9 @@ impl Project {
             "record": self.record,
             "issue_repo": self.issue_repo,
             "token_env": self.token_env,
+            "meegle": self.meegle,
+            "feishu_task": self.feishu_task,
+            "record_rule": self.record_rule,
         })
     }
 }
@@ -544,10 +667,10 @@ mod tests {
             .unwrap()
         };
         let gitee = old("git@gitee.com:a/demo.git");
-        assert_eq!(gitee.record, RecordOpts { issue: true, feishu_doc: true });
+        assert_eq!(gitee.record, RecordOpts { issue: true, feishu_doc: true, meegle: false, feishu_task: false });
         assert_eq!((gitee.issue_repo.clone(), gitee.token_env.clone()), (None, None));
-        assert_eq!(old("https://github.com/a/b").record, RecordOpts { issue: true, feishu_doc: true });
-        assert_eq!(old("git@x:a/demo.git").record, RecordOpts { issue: false, feishu_doc: true });
+        assert_eq!(old("https://github.com/a/b").record, RecordOpts { issue: true, feishu_doc: true, meegle: false, feishu_task: false });
+        assert_eq!(old("git@x:a/demo.git").record, RecordOpts { issue: false, feishu_doc: true, meegle: false, feishu_task: false });
 
         // 显式配置优先于推断；空白的 issue_repo / token_env 当没填
         let p: Project = serde_json::from_value(serde_json::json!({
@@ -555,11 +678,11 @@ mod tests {
             "record": {"issue": false, "feishu_doc": false}, "issue_repo": " ", "token_env": "MY_TOKEN"
         }))
         .unwrap();
-        assert_eq!(p.record, RecordOpts { issue: false, feishu_doc: false });
+        assert_eq!(p.record, RecordOpts { issue: false, feishu_doc: false, meegle: false, feishu_task: false });
         assert_eq!((p.issue_repo.as_deref(), p.token_env.as_deref()), (None, Some("MY_TOKEN")));
         // 只给了 issue：feishu_doc 默认开
         let partial: RecordOpts = serde_json::from_value(serde_json::json!({"issue": true})).unwrap();
-        assert_eq!(partial, RecordOpts { issue: true, feishu_doc: true });
+        assert_eq!(partial, RecordOpts { issue: true, feishu_doc: true, meegle: false, feishu_task: false });
 
         let _home = test_home();
         let mut cfg = AppConfig::default();

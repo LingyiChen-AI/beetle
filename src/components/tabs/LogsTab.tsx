@@ -509,7 +509,7 @@ export default function LogsTab({
   }
 
   return (
-    <div className="grid min-h-0 flex-1" style={{ gridTemplateColumns: "292px 1fr" }}>
+    <div className="grid min-h-0 flex-1" style={{ gridTemplateColumns: "clamp(220px, 30%, 292px) minmax(0, 1fr)" }}>
       <div className="flex min-h-0 flex-col" style={{ borderRight: "1px solid var(--line)" }}>
         <div className="relative flex items-center" style={{ padding: "10px 12px", borderBottom: "1px solid var(--line)", gap: 8 }}>
           <Segmented ariaLabel="时间范围" value={range} onChange={setRange} options={RANGES.map((r) => ({ value: r.id, label: r.label }))} />
@@ -582,7 +582,7 @@ export default function LogsTab({
           ))}
         </div>
       </div>
-      <div className="flex min-h-0 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-col">
         {selected ? (
           <RunDetailPane key={selected.id} run={selected} view={view} onGoEnv={onGoEnv} />
         ) : (

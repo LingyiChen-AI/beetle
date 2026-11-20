@@ -8,6 +8,7 @@ import type { CatalogEntry } from "../../api";
 import { AppearanceProvider } from "../../theme/appearance";
 import { ToastProvider } from "../common";
 import EnvPage from "./EnvPage";
+import { clearMeegleCache } from "./MeegleFields";
 import ProjectsPage from "./ProjectsPage";
 import SettingsPage from "./SettingsPage";
 import SkillsPage from "./SkillsPage";
@@ -50,9 +51,12 @@ describe("项目页", () => {
         rules_file: "AGENTS.md",
         description: "",
         dbs: ["demo_config"],
-        record: { issue: true, feishu_doc: true },
+        record: { issue: true, feishu_doc: true, meegle: false, feishu_task: false },
         issue_repo: null,
         token_env: null,
+        meegle: null,
+        feishu_task: null,
+        record_rule: null,
       },
     });
   });
@@ -92,9 +96,10 @@ describe("项目页", () => {
         rules_file: "AGENTS.md",
         description: "示例后台",
         dbs: ["demo_config"],
-        record: { issue: true, feishu_doc: false },
+        record: { issue: true, feishu_doc: false, meegle: false, feishu_task: false },
         issue_repo: "team/issues",
         token_env: "MY_TOKEN",
+        record_rule: null,
       },
     });
   });
@@ -623,5 +628,102 @@ describe("设置页", () => {
     expect(screen.queryByText("SQL 执行窗口")).toBeNull();
     expect(screen.queryByTestId("sql-window-settings")).toBeNull();
     expect(callsOf("get_skill_settings")).toEqual([]);
+  });
+});
+
+describe("项目页：飞书项目工单 / 飞书任务 / 记录规则", () => {
+  beforeEach(() => clearMeegleCache());
+  const form = {
+    fields: [
+      { field_key: "name", field_name: "名称", field_type: "text", options: [], default: null, auto: "自动填：bug 标题" },
+      { field_key: "priority", field_name: "优先级", field_type: "select", options: [{ id: "0", name: "P0" }, { id: "2", name: "P2" }], default: "2", auto: null },
+      { field_key: "end", field_name: "涉及端", field_type: "select", options: [{ id: "c1", name: "客户端" }], default: null, auto: null },
+      { field_key: "template", field_name: "缺陷类型", field_type: "work_item_template", options: [{ id: "t1", name: "用户反馈缺陷" }], default: null, auto: null },
+    ],
+    roles: [{ role_id: "r_fix", role_name: "缺陷处理人" }],
+    suggested_role: "r_fix",
+  };
+
+  test("登录后选空间、类型、必填字段、处理人，配飞书任务和规则，一起保存", async () => {
+    setHandlers({
+      list_projects: projectsView(),
+      save_project: undefined,
+      meegle_status: { installed: true, logged_in: true, host: "project.feishu.cn", user: "张三", error: null },
+      meegle_spaces: [{ project_key: "pk1", simple_name: "bot", name: "AI 客服" }],
+      meegle_types: [{ type_key: "issue", name: "缺陷" }],
+      meegle_form: form,
+      meegle_users: [{ user_key: "u_li", name: "李四", email: "" }],
+      lark_tasklists: [{ guid: "tl1", name: "调研" }],
+      lark_users: [],
+    });
+    render(<ProjectsPage />);
+    const card = await screen.findByTestId("project-demo");
+    await userEvent.click(within(card).getByRole("button", { name: "编辑 demo" }));
+    const f = screen.getByTestId("project-form-demo");
+    await userEvent.click(within(f).getByRole("button", { name: /建飞书项目工单/ }));
+    expect(await within(f).findByTestId("meegle-login-demo")).toHaveTextContent("已登录 · 张三");
+    // 勾了不止一种：出现记录规则
+    await userEvent.type(within(f).getByLabelText(/记录规则/), "调研类建飞书任务；bug 建工单");
+
+    await userEvent.click(await within(f).findByTestId("mg-space-demo"));
+    await userEvent.click(screen.getByRole("option", { name: "AI 客服" }));
+    expect(await within(f).findByTestId("mg-ai-note-demo-priority")).toBeInTheDocument();
+    // 默认：优先级、涉及端交给 AI 判断；缺陷类型（模板）用固定值
+    const pri = within(f).getByTestId("mg-ai-note-demo-priority");
+    expect(pri).toHaveTextContent("拿不准时用 P2");
+    // 限定 AI 的选择范围：排除 P0
+    await userEvent.click(within(pri).getByRole("button", { name: "P0" }));
+    expect(within(pri).getByRole("button", { name: "P0" })).toHaveAttribute("aria-pressed", "false");
+    expect(within(f).getByTestId("mg-ai-demo-end")).toHaveAttribute("aria-pressed", "true");
+    expect(within(f).getByTestId("mg-ai-demo-template")).toHaveAttribute("aria-pressed", "false");
+    expect(within(f).queryByTestId("meegle-missing-demo")).toBeNull();
+    // 涉及端改成固定值再选
+    await userEvent.click(within(f).getByRole("group", { name: "涉及端怎么填" }).querySelector("button:last-child") as HTMLElement);
+    await userEvent.click(within(f).getByTestId("mg-f-demo-end"));
+    await userEvent.click(screen.getByRole("option", { name: "客户端" }));
+    expect(within(f).getByTestId("mg-auto-demo")).toHaveTextContent("名称 由机器人自动填写");
+    await userEvent.type(within(f).getByLabelText(/默认处理人/), "李四");
+    await userEvent.click(await within(f).findByRole("option", { name: /李四/ }));
+    expect(within(f).getByTestId("mg-user-demo-picked")).toHaveTextContent("李四");
+
+    await userEvent.click(within(f).getByRole("button", { name: /建飞书任务/ }));
+    await userEvent.click(await within(f).findByTestId("tk-list-demo"));
+    await userEvent.click(await screen.findByRole("option", { name: "调研" }));
+
+    await userEvent.click(within(f).getByRole("button", { name: "保存项目" }));
+    const saved = callsOf("save_project")[0] as { project: Record<string, unknown> };
+    expect(saved.project.record).toEqual({ issue: true, feishu_doc: true, meegle: true, feishu_task: true });
+    expect(saved.project.record_rule).toBe("调研类建飞书任务；bug 建工单");
+    expect(saved.project.meegle).toEqual({
+      project_key: "pk1",
+      simple_name: "bot",
+      space_name: "AI 客服",
+      work_item_type: "issue",
+      work_item_type_name: "缺陷",
+      fields: [
+        { field_key: "template", field_name: "缺陷类型", value: "t1", label: "用户反馈缺陷" },
+        { field_key: "end", field_name: "涉及端", value: "c1", label: "客户端" },
+      ],
+      ai_fields: [{ field_key: "priority", field_name: "优先级", field_type: "select", options: [{ id: "2", name: "P2" }], fallback: "2" }],
+      assignee: { user_key: "u_li", name: "李四" },
+      role: { role_id: "r_fix", role_name: "缺陷处理人" },
+    });
+    expect(saved.project.feishu_task).toMatchObject({ tasklist_guid: "tl1", tasklist_name: "调研" });
+  });
+
+  test("没登录飞书项目 CLI：显示去登录，点了走环境修复", async () => {
+    setHandlers({
+      list_projects: projectsView(),
+      meegle_status: { installed: true, logged_in: false, host: null, user: null, error: "还没有登录飞书项目 CLI" },
+      env_fix: undefined,
+    });
+    render(<ProjectsPage />);
+    const card = await screen.findByTestId("project-demo");
+    await userEvent.click(within(card).getByRole("button", { name: "编辑 demo" }));
+    const f = screen.getByTestId("project-form-demo");
+    await userEvent.click(within(f).getByRole("button", { name: /建飞书项目工单/ }));
+    expect(await within(f).findByTestId("meegle-login-demo")).toHaveTextContent("还没有登录");
+    await userEvent.click(within(f).getByRole("button", { name: /去登录/ }));
+    await waitFor(() => expect(callsOf("env_fix")[0]).toEqual({ id: "meegle_login" }));
   });
 });

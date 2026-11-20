@@ -552,7 +552,7 @@ mod tests {
             }
             let r = rt(&dst);
             assert_eq!(r["projects"]["demo"]["repo"], "git@gitee.com:a/demo.git");
-            assert_eq!(r["projects"]["demo"]["record"], json!({"issue": true, "feishu_doc": true}));
+            assert_eq!(r["projects"]["demo"]["record"], json!({"issue": true, "feishu_doc": true, "meegle": false, "feishu_task": false}));
             assert_eq!(r["projects"]["demo"]["dbs"][0]["alias"], "demo_config");
             assert_eq!(r["dbs"][0], json!({"alias": "demo_config", "kind": "mysql", "description": "", "access": "skill",
                                            "skill": "my-sql-skill", "database": "demo_config", "note": ""}));

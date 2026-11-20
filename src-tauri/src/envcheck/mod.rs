@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// 全部检查项，按界面展示顺序。
-pub const ALL_IDS: [&str; 11] = [
+pub const ALL_IDS: [&str; 13] = [
     "claude",
     "codex",
     "node",
@@ -25,6 +25,8 @@ pub const ALL_IDS: [&str; 11] = [
     "ocr",
     "lark_cli",
     "lark_login",
+    "meegle_cli",
+    "meegle_login",
     "net_feishu",
     "net_anthropic",
     "system_proxy",
@@ -239,7 +241,7 @@ pub fn requirements(cfg: &config::AppConfig, skills: &[SkillInfo]) -> EnvRequire
     EnvRequirements {
         base: BASE_IDS.to_vec(),
         engines: ENGINE_IDS.to_vec(),
-        bots: cfg.bots.iter().map(|b| (b.id.clone(), required_ids(b, skills))).collect(),
+        bots: cfg.bots.iter().map(|b| (b.id.clone(), required_ids_for(b, skills, cfg))).collect(),
     }
 }
 
@@ -278,9 +280,31 @@ pub fn required_ids(bot: &Bot, skills: &[SkillInfo]) -> Vec<&'static str> {
     ALL_IDS.iter().copied().filter(|id| need.contains(id)).collect()
 }
 
+/// 机器人会建飞书项目工单：启用了 issue-record，且它的群关联的项目（没关联时看默认项目）里有勾「建飞书项目工单」的。
+pub fn needs_meegle(bot: &Bot, cfg: &config::AppConfig) -> bool {
+    if !bot.skills.iter().any(|s| s == "issue-record") {
+        return false;
+    }
+    let mut names: Vec<&String> = bot.groups.iter().flat_map(|g| g.projects.iter()).collect();
+    if names.is_empty() {
+        names = cfg.default_projects.iter().collect();
+    }
+    names.iter().any(|n| cfg.projects.get(*n).is_some_and(|p| p.record.meegle))
+}
+
+/// `required_ids` 再加上配置决定的项（建飞书项目工单 → meegle CLI 与登录）。
+pub fn required_ids_for(bot: &Bot, skills: &[SkillInfo], cfg: &config::AppConfig) -> Vec<&'static str> {
+    let mut need = required_ids(bot, skills);
+    if needs_meegle(bot, cfg) {
+        need.extend(["meegle_cli", "meegle_login"]);
+    }
+    ALL_IDS.iter().copied().filter(|id| need.contains(id)).collect()
+}
+
 /// 只有状态为「错误」的所需项会阻止启动（警告、未登录的启发式判断不拦）。
 pub fn ensure_ready_with(probe: &Arc<dyn Probe>, bot: &Bot, skills: &[SkillInfo], timeout: Duration) -> Result<(), String> {
-    let ids = required_ids(bot, skills);
+    let cfg = config::load().unwrap_or_default();
+    let ids = required_ids_for(bot, skills, &cfg);
     let items = check_ids(probe, &ids, timeout);
     let bad: Vec<String> = blockers(&items, &ids).into_iter().map(|i| i.label.clone()).collect();
     if bad.is_empty() {

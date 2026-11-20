@@ -179,6 +179,39 @@ impl LarkCli {
         pick(&value, "/data/messages/0/content", "消息内容")
     }
 
+    /// 我能看到的任务清单（建飞书任务时选清单用），最多一页 50 个。
+    pub fn tasklists(&self) -> Result<Vec<(String, String)>, String> {
+        let v = self.run_json(&["task", "tasklists", "list", "--as", "user", "--params", r#"{"page_size":50}"#])?;
+        Ok(v.pointer("/data/items")
+            .and_then(|a| a.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|t| Some((t["guid"].as_str()?.to_string(), t["name"].as_str().unwrap_or_default().to_string())))
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
+
+    /// 按姓名 / 拼音 / 邮箱搜通讯录：(open_id, 姓名, 部门)。
+    pub fn search_users(&self, query: &str) -> Result<Vec<(String, String, String)>, String> {
+        let v = self.run_json(&["contact", "+search-user", "--as", "user", "--query", query, "--page-size", "10"])?;
+        let strip = |s: &str| s.replace("<h>", "").replace("</h>", "");
+        Ok(v.pointer("/data/users")
+            .and_then(|a| a.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|u| {
+                        Some((
+                            u["open_id"].as_str()?.to_string(),
+                            strip(u["localized_name"].as_str().or(u["name"].as_str()).unwrap_or_default()),
+                            strip(u["department"].as_str().unwrap_or_default()),
+                        ))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
+
     /// 以用户身份新建一份飞书文档，返回文档链接（新群自动接入时建记录文档用）。
     pub fn create_doc(&self, title: &str) -> Result<String, String> {
         let value = self.run_json(&[

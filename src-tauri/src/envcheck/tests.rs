@@ -365,3 +365,46 @@ fn fix_opens_terminal_for_login_and_skips_healthy_items() {
     assert!(msg.contains("不需要修复"));
     assert!(runner.calls.lock().unwrap().is_empty());
 }
+
+#[test]
+fn meegle_items_warn_when_missing_and_check_login() {
+    let missing = items::check("meegle_cli", &FakeProbe::default());
+    assert_eq!((missing.status, missing.group), (Status::Warn, Group::Feishu));
+    assert_eq!(missing.action.unwrap().kind, ActionKind::Install);
+    let login = items::check("meegle_login", &FakeProbe::default());
+    assert_eq!(login.status, Status::Warn);
+
+    let mut p = FakeProbe::default().with("meegle", "/npm/meegle", "1.0.27");
+    p.runs.insert("meegle".into(), Ok((0, "{\n  \"authenticated\": true,\n  \"host\": \"project.feishu.cn\"\n}".into())));
+    assert_eq!(items::check("meegle_cli", &p).status, Status::Ok);
+    assert_eq!(items::check("meegle_login", &p).status, Status::Ok);
+    p.runs.insert("meegle".into(), Ok((0, "{\"authenticated\": false}".into())));
+    let it = items::check("meegle_login", &p);
+    assert_eq!(it.status, Status::Error);
+    assert_eq!(it.action.as_ref().unwrap().kind, ActionKind::Login);
+    assert_eq!(
+        install::plan_for("meegle_login", ActionKind::Login, Os::Windows).unwrap(),
+        Plan::Terminal { args: vec!["meegle".into(), "auth".into(), "login".into()] }
+    );
+    assert!(matches!(install::plan_for("meegle_cli", ActionKind::Install, Os::Mac).unwrap(), Plan::Run { ref args, .. } if args.contains(&"@lark-project/meegle".to_string())));
+}
+
+#[test]
+fn meegle_required_only_when_a_bot_project_creates_work_items() {
+    let mut cfg = config::AppConfig::default();
+    let mut p = config::Project::new("git@x:a/b.git", "release/*", "AGENTS.md", "x", vec![]);
+    cfg.projects.insert("demo".into(), p.clone());
+    let mut bot = Bot::new_default("b", "n", "cli_x");
+    assert!(bot.skills.iter().any(|s| s == "issue-record"));
+    cfg.default_projects = vec!["demo".into()];
+    assert!(!needs_meegle(&bot, &cfg));
+    p.record.meegle = true;
+    cfg.projects.insert("demo".into(), p);
+    assert!(needs_meegle(&bot, &cfg));
+    let ids = required_ids_for(&bot, &[], &cfg);
+    assert!(ids.contains(&"meegle_cli") && ids.contains(&"meegle_login"));
+    // 没启用 issue-record 技能就不需要
+    bot.skills.retain(|s| s != "issue-record");
+    assert!(!needs_meegle(&bot, &cfg));
+    assert!(!required_ids_for(&bot, &[], &cfg).contains(&"meegle_cli"));
+}

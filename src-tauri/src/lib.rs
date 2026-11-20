@@ -10,6 +10,7 @@ pub mod dispatcher;
 pub mod envcheck;
 pub mod feishu;
 pub mod issue;
+pub mod meegle;
 pub mod migrate;
 pub mod onboard;
 pub mod platform;
@@ -130,6 +131,7 @@ pub fn run() {
             catalog::catalog_uninstall,
             catalog::catalog_refresh_config,
             issue::check_issue_token,
+            meegle::meegle_status, meegle::meegle_spaces, meegle::meegle_types, meegle::meegle_form, meegle::meegle_users, meegle::lark_tasklists, meegle::lark_users,
             feishu::registration::feishu_create_app,
             feishu::registration::feishu_cancel_create_app,
             updater::update_status, updater::check_update, updater::install_update,

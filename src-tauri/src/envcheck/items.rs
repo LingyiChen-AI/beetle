@@ -13,6 +13,8 @@ pub fn label(id: &str) -> &'static str {
         "git" => "Git",
         "lark_cli" => "lark-cli",
         "lark_login" => "lark-cli 登录",
+        "meegle_cli" => "飞书项目 CLI（meegle）",
+        "meegle_login" => "飞书项目 CLI 登录",
         "ocr" => "ocr（代码审查）",
         "net_feishu" => "网络：飞书",
         "net_anthropic" => "网络：Anthropic API",
@@ -23,7 +25,7 @@ pub fn label(id: &str) -> &'static str {
 
 fn group(id: &str) -> Group {
     match id {
-        "lark_cli" | "lark_login" => Group::Feishu,
+        "lark_cli" | "lark_login" | "meegle_cli" | "meegle_login" => Group::Feishu,
         "net_feishu" | "net_anthropic" | "system_proxy" => Group::Network,
         _ => Group::Runtime,
     }
@@ -76,6 +78,8 @@ pub fn check(id: &str, p: &dyn Probe) -> EnvItem {
         "git" => check_runtime(it, p, "git", None, "Git"),
         "lark_cli" => check_lark_cli(it, p),
         "lark_login" => check_lark_login(it, p),
+        "meegle_cli" => check_meegle_cli(it, p),
+        "meegle_login" => check_meegle_login(it, p),
         "ocr" => check_runtime(it, p, "ocr", None, "ocr"),
         "net_feishu" => check_net_feishu(it, p),
         "net_anthropic" => check_net_anthropic(it, p),
@@ -174,6 +178,42 @@ fn check_lark_login(it: EnvItem, p: &dyn Probe) -> EnvItem {
     match p.lark_logged_in() {
         Ok(()) => set(it, Status::Ok, "用户身份已登录", None),
         Err(_) => set(it, Status::Error, "用户身份未登录或登录已过期", act(ActionKind::Login, "去登录")),
+    }
+}
+
+fn check_meegle_cli(it: EnvItem, p: &dyn Probe) -> EnvItem {
+    match locate_with_version(it, p, "meegle") {
+        Ok((mut it, path, version)) => {
+            it.version = Some(version);
+            set(it, Status::Ok, format!("已安装（{}）", path.display()), None)
+        }
+        Err(mut e) => {
+            // 只有项目选了「建飞书项目工单」才需要，没装不算错误
+            if e.status == Status::Error {
+                e.status = Status::Warn;
+                e.detail = format!("{}（项目记录方式选了「建飞书项目工单」才需要）", e.detail);
+            }
+            e
+        }
+    }
+}
+
+/// `meegle auth status` 输出 `{"authenticated": true, ...}` 才算已登录。
+fn check_meegle_login(it: EnvItem, p: &dyn Probe) -> EnvItem {
+    let Some(path) = p.find("meegle") else {
+        return set(it, Status::Warn, "需要先安装飞书项目 CLI（项目记录方式选了「建飞书项目工单」才需要）", act(ActionKind::Install, "安装 meegle"));
+    };
+    match p.run(&path, &["auth", "status"]) {
+        Ok((0, out)) => {
+            let compact: String = out.chars().filter(|c| !c.is_whitespace()).collect();
+            if compact.contains("\"authenticated\":true") {
+                set(it, Status::Ok, "已登录", None)
+            } else {
+                set(it, Status::Error, "未登录或登录已过期", act(ActionKind::Login, "去登录"))
+            }
+        }
+        Ok(_) => set(it, Status::Error, "未登录或登录已过期", act(ActionKind::Login, "去登录")),
+        Err(e) => set(it, Status::Warn, format!("无法确认登录状态：{e}"), act(ActionKind::Login, "去登录")),
     }
 }
 

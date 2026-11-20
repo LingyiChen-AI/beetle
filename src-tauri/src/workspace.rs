@@ -488,7 +488,7 @@ mod tests {
         assert_eq!(projects.keys().collect::<Vec<_>>(), ["demo"]);
         assert_eq!(projects["demo"]["repo"], "git@gitee.com:a/demo.git");
         // 记录方式：gitee 仓库默认建 issue + 写飞书文档；issue 仓库与 token 变量名未改时为 null（脚本按默认推断）
-        assert_eq!(projects["demo"]["record"], json!({"issue": true, "feishu_doc": true}));
+        assert_eq!(projects["demo"]["record"], json!({"issue": true, "feishu_doc": true, "meegle": false, "feishu_task": false}));
         assert!(projects["demo"]["issue_repo"].is_null() && projects["demo"]["token_env"].is_null());
         assert_eq!(projects["demo"]["rules_file"], "AGENTS.md");
         let dbs = rt["dbs"].as_array().unwrap();
@@ -555,18 +555,22 @@ mod tests {
         let _h = test_home();
         let (mut cfg, bot, group, interp, trig) = fixture();
         let p = cfg.projects.get_mut("demo").unwrap();
-        p.record = crate::store::config::RecordOpts { issue: true, feishu_doc: false };
+        p.record = crate::store::config::RecordOpts { issue: true, feishu_doc: false, meegle: false, feishu_task: false };
         p.issue_repo = Some("team/issues".into());
         p.token_env = Some("MY_GITEE_TOKEN".into());
         let ws = prepare(&cfg, &bot, &group, &interp, &trig).unwrap();
         let rt: Value = serde_json::from_str(&read(&ws.runtime_json)).unwrap();
         let demo = &rt["projects"]["demo"];
-        assert_eq!(demo["record"], json!({"issue": true, "feishu_doc": false}));
+        assert_eq!(demo["record"], json!({"issue": true, "feishu_doc": false, "meegle": false, "feishu_task": false}));
+        assert!(demo["meegle"].is_null() && demo["feishu_task"].is_null() && demo["record_rule"].is_null());
         assert_eq!(demo["issue_repo"], "team/issues");
         assert_eq!(demo["token_env"], "MY_GITEE_TOKEN");
         for root in [".claude/skills", ".agents/skills"] {
             let base = ws.dir.join(root);
             assert!(base.join("issue-record/scripts/create_issue.py").is_file(), "{root}");
+            for f in ["issue-record/scripts/create_work_item.py", "issue-record/scripts/create_task.py", "_shared/bp_meegle.py", "_shared/bp_task.py"] {
+                assert!(base.join(f).is_file(), "{root} 缺少 {f}");
+            }
             assert!(base.join("_shared/bp_issue.py").is_file(), "{root}");
             assert!(!read(&base.join("issue-record/SKILL.md")).contains("{{"), "{root}");
         }

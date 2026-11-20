@@ -357,9 +357,9 @@ mod tests {
 
     #[test]
     fn default_record_follows_repo_host() {
-        assert_eq!(RecordOpts::default_for("git@gitee.com:a/b.git"), RecordOpts { issue: true, feishu_doc: true });
-        assert_eq!(RecordOpts::default_for("https://github.com/a/b"), RecordOpts { issue: true, feishu_doc: true });
-        assert_eq!(RecordOpts::default_for("git@x:a/b.git"), RecordOpts { issue: false, feishu_doc: true });
+        assert_eq!(RecordOpts::default_for("git@gitee.com:a/b.git"), RecordOpts { issue: true, feishu_doc: true, meegle: false, feishu_task: false });
+        assert_eq!(RecordOpts::default_for("https://github.com/a/b"), RecordOpts { issue: true, feishu_doc: true, meegle: false, feishu_task: false });
+        assert_eq!(RecordOpts::default_for("git@x:a/b.git"), RecordOpts { issue: false, feishu_doc: true, meegle: false, feishu_task: false });
     }
 
     #[test]

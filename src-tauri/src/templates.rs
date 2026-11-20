@@ -122,10 +122,50 @@ pub fn record_desc(p: &Project) -> String {
             None => "建 issue（但仓库不是 gitee.com / github.com，无法建）".to_string(),
         });
     }
+    if p.record.meegle {
+        v.push(match &p.meegle {
+            Some(m) => {
+                let judge: Vec<String> = m
+                    .ai_fields
+                    .iter()
+                    .map(|f| {
+                        let name = if f.field_name.is_empty() { &f.field_key } else { &f.field_name };
+                        if f.options.is_empty() {
+                            format!("{name}（填文字）")
+                        } else {
+                            format!("{name}（{}）", f.options.iter().map(|o| o.name.as_str()).collect::<Vec<_>>().join("/"))
+                        }
+                    })
+                    .collect();
+                format!(
+                    "建飞书项目工单（{} · {}{}）",
+                    if m.space_name.is_empty() { &m.project_key } else { &m.space_name },
+                    if m.work_item_type_name.is_empty() { &m.work_item_type } else { &m.work_item_type_name },
+                    if judge.is_empty() { String::new() } else { format!("；建单时按问题判断：{}", judge.join("、")) }
+                )
+            }
+            None => "建飞书项目工单（但还没选空间，无法建）".to_string(),
+        });
+    }
+    if p.record.feishu_task {
+        let t = p.feishu_task.clone().unwrap_or_default();
+        let mut extra: Vec<String> = Vec::new();
+        if !t.tasklist_name.is_empty() {
+            extra.push(format!("清单 {}", t.tasklist_name));
+        }
+        if !t.assignee_name.is_empty() {
+            extra.push(format!("负责人 {}", t.assignee_name));
+        }
+        v.push(if extra.is_empty() { "建飞书任务".to_string() } else { format!("建飞书任务（{}）", extra.join("，")) });
+    }
     if p.record.feishu_doc {
         v.push("写飞书文档".to_string());
     }
-    if v.is_empty() { "不记录".to_string() } else { v.join(" + ") }
+    let base = if v.is_empty() { "不记录".to_string() } else { v.join(" + ") };
+    match p.record_rule.as_deref().map(str::trim).filter(|r| !r.is_empty()) {
+        Some(rule) if !v.is_empty() => format!("{base}；记录规则：{}", rule.replace('\n', " ")),
+        _ => base,
+    }
 }
 
 #[cfg(test)]
@@ -265,6 +305,35 @@ mod tests {
         assert_eq!(record_desc(&p), "建 issue（Gitee · team/demo）");
         p.record.issue = false;
         assert_eq!(record_desc(&p), "不记录");
+        p.record.meegle = true;
+        assert!(record_desc(&p).contains("还没选空间"));
+        p.meegle = Some(crate::store::config::MeegleTarget {
+            project_key: "pk".into(),
+            space_name: "AI 客服".into(),
+            work_item_type: "issue".into(),
+            work_item_type_name: "缺陷".into(),
+            ..Default::default()
+        });
+        assert_eq!(record_desc(&p), "建飞书项目工单（AI 客服 · 缺陷）");
+        p.meegle.as_mut().unwrap().ai_fields = vec![crate::store::config::MeegleAiField {
+            field_key: "priority".into(),
+            field_name: "优先级".into(),
+            options: vec![
+                crate::store::config::MeegleOption { id: "0".into(), name: "P0".into() },
+                crate::store::config::MeegleOption { id: "1".into(), name: "P1".into() },
+            ],
+            ..Default::default()
+        }];
+        assert_eq!(record_desc(&p), "建飞书项目工单（AI 客服 · 缺陷；建单时按问题判断：优先级（P0/P1））");
+        p.record.meegle = false;
+        p.record.feishu_task = true;
+        p.feishu_task = Some(crate::store::config::FeishuTaskTarget { assignee_name: "张三".into(), ..Default::default() });
+        assert_eq!(record_desc(&p), "建飞书任务（负责人 张三）");
+        p.record_rule = Some("调研类建飞书任务\nbug 建 issue".into());
+        assert_eq!(record_desc(&p), "建飞书任务（负责人 张三）；记录规则：调研类建飞书任务 bug 建 issue");
+        p.record.feishu_task = false;
+        assert_eq!(record_desc(&p), "不记录", "没勾任何方式时规则不生效");
+        p.record_rule = None;
         let mut q = Project::new("git@x:a/b.git", "release/*", "AGENTS.md", "x", vec![]);
         q.record.issue = true;
         assert!(record_desc(&q).contains("无法建"));

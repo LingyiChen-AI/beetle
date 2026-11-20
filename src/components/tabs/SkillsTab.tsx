@@ -137,7 +137,7 @@ export default function SkillsTab({ view, onChanged }: { view: BotView; onChange
   };
 
   return (
-    <div className="grid min-h-0 flex-1" style={{ gridTemplateColumns: "360px 1fr" }}>
+    <div className="grid min-h-0 flex-1" style={{ gridTemplateColumns: "clamp(260px, 36%, 360px) minmax(0, 1fr)" }}>
       <div className="scroll" style={{ borderRight: "1px solid var(--line)", padding: 16 }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
           <div style={{ fontWeight: 600 }}>

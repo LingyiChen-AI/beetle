@@ -110,7 +110,7 @@ html.theming, html.theming *, html.theming *::before, html.theming *::after {
   .sw[disabled] { opacity: 0.5; cursor: not-allowed; }
   .inp { height: 32px; width: 100%; padding: 0 10px; border-radius: 7px; border: 1px solid var(--border); background: var(--input); color: var(--fg); outline: none; }
   .inp:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent); }
-  textarea.inp { height: auto; padding: 8px 10px; line-height: 1.6; resize: vertical; }
+  textarea.inp { height: auto; padding: 8px 10px; line-height: 20px; /* 整数像素：1.6 倍会让下面的内容落在小数坐标上，悬停重绘时抖 1px */ resize: vertical; }
   .lbl { font-size: 12px; color: var(--muted); margin-bottom: 6px; display: block; }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
   .card-h { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid var(--line); }

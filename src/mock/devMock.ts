@@ -762,6 +762,43 @@ export async function mockInvoke(cmd: string, a: Record<string, unknown>): Promi
       skills.push(s);
       return delay(s);
     }
+    case "meegle_status":
+      return delay({ installed: true, logged_in: true, host: "project.feishu.cn", user: "张三", error: null });
+    case "meegle_spaces":
+      return delay([
+        { project_key: "pk_demo", simple_name: "demo", name: "示例空间" },
+        { project_key: "pk_ops", simple_name: "ops", name: "运维空间" },
+      ]);
+    case "meegle_types":
+      return delay([
+        { type_key: "issue", name: "缺陷" },
+        { type_key: "story", name: "需求" },
+      ]);
+    case "meegle_form":
+      return delay({
+        fields: [
+          { field_key: "name", field_name: "名称", field_type: "text", options: [], default: null, auto: "自动填：bug 标题" },
+          { field_key: "description", field_name: "缺陷描述", field_type: "multi_text", options: [], default: null, auto: "自动填：bug 分析报告" },
+          { field_key: "priority", field_name: "优先级", field_type: "select", options: [{ id: "0", name: "P0" }, { id: "1", name: "P1" }, { id: "2", name: "P2" }], default: "2", auto: null },
+          { field_key: "issue_reporter", field_name: "报告人", field_type: "multi_user", options: [], default: null, auto: "自动填：当前登录的飞书项目用户" },
+          { field_key: "bug_classification", field_name: "涉及端", field_type: "select", options: [{ id: "c1", name: "客户端" }, { id: "c2", name: "服务端" }], default: null, auto: null },
+          { field_key: "template", field_name: "缺陷类型", field_type: "work_item_template", options: [{ id: "t1", name: "用户反馈缺陷" }, { id: "t2", name: "测试反馈缺陷" }], default: null, auto: null },
+        ],
+        roles: [
+          { role_id: "reporter", role_name: "报告人" },
+          { role_id: "r_fix", role_name: "缺陷处理人" },
+        ],
+        suggested_role: "r_fix",
+      });
+    case "meegle_users":
+      return delay(String(a.query).trim() ? [{ user_key: "u_1", name: "李四", email: "lisi@example.com" }] : []);
+    case "lark_tasklists":
+      return delay([
+        { guid: "tl_1", name: "研发待办" },
+        { guid: "tl_2", name: "调研" },
+      ]);
+    case "lark_users":
+      return delay(String(a.query).trim() ? [{ open_id: "ou_1", name: "王五", department: "研发部" }] : []);
     case "check_issue_token": {
       const p = a.project as ProjectsView["projects"][string];
       const github = p.repo.includes("github.com");

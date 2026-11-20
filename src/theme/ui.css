@@ -97,8 +97,8 @@
   .ui-modal-h { display: flex; align-items: center; gap: 12px; padding: 14px 14px 14px 20px; border-bottom: 1px solid var(--line); flex: none; }
   .ui-modal-ic { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-text); flex: none; box-shadow: inset 0 0 0 1px var(--accent-ring); }
   .ui-modal-ic svg { width: 17px; height: 17px; }
-  .ui-modal-t { font-weight: 600; font-size: 15px; display: flex; align-items: center; gap: 8px; min-width: 0; }
-  .ui-modal-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .ui-modal-t { font-weight: 600; font-size: 15px; line-height: 22px; display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .ui-modal-sub { color: var(--muted); font-size: 12px; line-height: 18px; margin-top: 2px; }
   .ui-modal-f { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--line); flex: none; background: color-mix(in srgb, var(--card2) 40%, transparent); }
 
   /* ───────── 提示 ───────── */
@@ -255,3 +255,8 @@ table.t td.brk { overflow-wrap: anywhere; word-break: normal; min-width: 160px; 
 .update-progress-bar { height: 100%; border-radius: 3px; background: var(--accent); transition: width 0.25s ease; }
 .update-progress-bar.indeterminate { width: 35%; animation: update-indet 1.2s ease-in-out infinite; }
 @keyframes update-indet { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+
+/* 加载占位：和最终内容同尺寸的灰块，避免内容到达时布局跳动 */
+.skel { display: inline-block; border-radius: 5px; background: linear-gradient(90deg, var(--subtle) 0%, var(--card2) 50%, var(--subtle) 100%); background-size: 200% 100%; animation: skel 1.2s ease-in-out infinite; }
+@keyframes skel { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .skel { animation: none; } }

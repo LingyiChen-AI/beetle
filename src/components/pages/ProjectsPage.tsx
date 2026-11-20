@@ -17,8 +17,10 @@ import {
 } from "../../api";
 import { DEFAULT_TOKEN_ENV, PLATFORM_LABEL, defaultRecord, issueTarget, parseRepo, platformOf } from "../../issueRepo";
 import { PageHead, useToast } from "../common";
-import { ChipMultiSelect, EmptyState, ToggleChip, Truncate, type ChipOption } from "../ui";
+import { ChipMultiSelect, EmptyState, Modal, ToggleChip, Truncate, type ChipOption } from "../ui";
 import { accessSummary } from "./DataSourcesPage";
+import { MeegleFields, SubCard } from "./MeegleFields";
+import { TaskFields } from "./TaskFields";
 
 export const emptyProject = (): Project => ({
   repo: "",
@@ -26,17 +28,23 @@ export const emptyProject = (): Project => ({
   rules_file: "AGENTS.md",
   description: "",
   dbs: [],
-  record: { issue: false, feishu_doc: true },
+  record: { issue: false, feishu_doc: true, meegle: false, feishu_task: false },
   issue_repo: null,
   token_env: null,
+  meegle: null,
+  feishu_task: null,
+  record_rule: null,
 });
 
-const recordOf = (p: Project): RecordOpts => p.record ?? defaultRecord(p.repo);
+const recordOf = (p: Project): RecordOpts => {
+  const r = p.record ?? defaultRecord(p.repo);
+  return { ...r, meegle: r.meegle ?? false, feishu_task: r.feishu_task ?? false };
+};
 
 /** 提交前整理：记录方式补齐，issue 仓库 / token 变量名去空白，空的当没填。 */
 function normalized(p: Project): Project {
   const blank = (v: string | null | undefined) => (v ?? "").trim() || null;
-  return { ...p, record: recordOf(p), issue_repo: blank(p.issue_repo), token_env: blank(p.token_env) };
+  return { ...p, record: recordOf(p), issue_repo: blank(p.issue_repo), token_env: blank(p.token_env), record_rule: blank(p.record_rule) };
 }
 
 /** 卡片上的记录方式摘要。 */
@@ -47,7 +55,10 @@ function recordSummary(p: Project): string[] {
     const t = issueTarget(p);
     out.push(t ? `${PLATFORM_LABEL[t.platform]} issue · ${t.repo}` : "建 issue（仓库无法识别）");
   }
+  if (r.meegle) out.push(p.meegle?.project_key ? `飞书项目 · ${p.meegle.space_name || p.meegle.project_key} · ${p.meegle.work_item_type_name || p.meegle.work_item_type}` : "飞书项目工单（未选空间）");
+  if (r.feishu_task) out.push(p.feishu_task?.tasklist_name ? `飞书任务 · ${p.feishu_task.tasklist_name}` : "飞书任务");
   if (r.feishu_doc) out.push("飞书文档");
+  if (p.record_rule?.trim() && out.length > 1) out.push("按记录规则挑选");
   return out;
 }
 
@@ -100,8 +111,9 @@ function RecordFields({
     onChange({ record: { ...record, [key]: !record[key] } });
     setTok(null);
   };
+  const picked = (["issue", "meegle", "feishu_task", "feishu_doc"] as const).filter((x) => record[x]).length;
   const chip = (key: keyof RecordOpts, label: string) => (
-    <ToggleChip on={record[key]} onChange={() => toggle(key)}>
+    <ToggleChip on={!!record[key]} onChange={() => toggle(key)}>
       {label}
     </ToggleChip>
   );
@@ -110,10 +122,28 @@ function RecordFields({
       <span className="lbl">记录方式（可多选，找到问题后执行）</span>
       <div className="flex flex-wrap gap-1.5">
         {chip("issue", "建 issue")}
+        {chip("meegle", "建飞书项目工单")}
+        {chip("feishu_task", "建飞书任务")}
         {chip("feishu_doc", "写飞书文档")}
       </div>
+      {picked > 1 && (
+        <div style={{ marginTop: 10 }}>
+          <label className="lbl" htmlFor={`pj-rule-${k}`}>
+            记录规则（可选，用自然语言写什么情况用哪几种；不写就全部执行）
+          </label>
+          <textarea
+            id={`pj-rule-${k}`}
+            className="inp"
+            rows={2}
+            placeholder="例如：调研、需求类的建飞书任务；确认是 bug 的建飞书项目工单和 issue，再写飞书文档"
+            value={p.record_rule ?? ""}
+            onChange={(e) => onChange({ record_rule: e.target.value })}
+          />
+        </div>
+      )}
       {record.issue && (
-        <div className="grid" style={{ gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 10 }}>
+        <SubCard title={target ? `${PLATFORM_LABEL[target.platform]} issue` : "issue"} testId={`issue-${k}`}>
+          <div className="grid" style={{ gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
           <div className="min-w-0">
             <span className="lbl">平台 · 仓库</span>
             <span className="mono break-all" style={{ fontSize: 12, color: target ? undefined : "var(--danger-fg)" }} data-testid={`issue-target-${k}`}>
@@ -164,8 +194,11 @@ function RecordFields({
               </span>
             )}
           </div>
-        </div>
+          </div>
+        </SubCard>
       )}
+      {record.meegle && <MeegleFields value={p.meegle} k={k} onChange={(meegle) => onChange({ meegle })} />}
+      {record.feishu_task && <TaskFields value={p.feishu_task} k={k} onChange={(feishu_task) => onChange({ feishu_task })} />}
     </div>
   );
 }
@@ -194,8 +227,39 @@ function ProjectForm({
   const setRepo = (repo: string) =>
     setP((x) => ({ ...x, repo, record: recordTouched ? recordOf(x) : { ...recordOf(x), issue: platformOf(repo) !== null } }));
   const key = initialName ?? "new";
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    setSaving(true);
+    try {
+      await onSave(name, normalized(p));
+    } finally {
+      setSaving(false);
+    }
+  };
   return (
-    <div className="card" style={{ padding: 16 }} data-testid={`project-form-${key}`}>
+    <Modal
+      title={isNew ? "添加项目" : `编辑项目 ${initialName}`}
+      icon={FolderGit2}
+      subtitle="代码仓库、关联数据源和找到问题后的记录方式"
+      width={780}
+      height={Math.min(860, Math.round(window.innerHeight * 0.86))}
+      onClose={onCancel}
+      closeDisabled={saving}
+      dismissOnOverlay={false}
+      testId={`project-form-${key}`}
+      footer={
+        <>
+          <button type="button" className="btn tr" disabled={saving} onClick={onCancel}>
+            <X />
+            取消
+          </button>
+          <button type="button" className="btn btn-pri tr" disabled={saving || !name || !p.repo.trim()} onClick={() => void save()}>
+            <Check />
+            {saving ? "保存中…" : "保存项目"}
+          </button>
+        </>
+      }
+    >
       <div className="grid" style={{ gridTemplateColumns: "1fr 2fr", gap: 12 }}>
         <div>
           <label className="lbl" htmlFor={`pj-name-${key}`}>
@@ -254,17 +318,7 @@ function ProjectForm({
         </div>
         <RecordFields p={p} k={key} onChange={(next) => setP((x) => ({ ...x, ...next }))} onToggle={() => setRecordTouched(true)} />
       </div>
-      <div className="flex justify-end gap-2" style={{ marginTop: 14 }}>
-        <button type="button" className="btn tr" onClick={onCancel}>
-          <X />
-          取消
-        </button>
-        <button type="button" className="btn btn-pri tr" disabled={!name || !p.repo.trim()} onClick={() => void onSave(name, normalized(p))}>
-          <Check />
-          保存项目
-        </button>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -334,21 +388,25 @@ export default function ProjectsPage({ onGoDataSources = hashGoDataSources }: { 
             {error}
           </div>
         )}
-        {editing === null && (
+        {editing !== undefined && (editing === null || view.projects[editing]) && (
           <ProjectForm
-            initialName={null}
-            initial={emptyProject()}
+            key={editing ?? "__new__"}
+            initialName={editing}
+            initial={editing === null ? emptyProject() : view.projects[editing]}
             dbs={view.dbs}
-            onGoDataSources={onGoDataSources}
+            onGoDataSources={() => {
+              setEditing(undefined);
+              onGoDataSources();
+            }}
             onCancel={() => setEditing(undefined)}
             onSave={async (n, p) => {
-              const ok = await run(() => saveProject(n, p), `已添加项目 ${n}`);
+              const ok = await run(() => saveProject(n, p), editing === null ? `已添加项目 ${n}` : "项目已保存");
               if (ok) setEditing(undefined);
               return ok;
             }}
           />
         )}
-        {names.length === 0 && editing !== null && (
+        {names.length === 0 && (
           <div className="card">
             <EmptyState
               icon={FolderGit2}
@@ -365,22 +423,6 @@ export default function ProjectsPage({ onGoDataSources = hashGoDataSources }: { 
         )}
         {names.map((n) => {
           const p = view.projects[n];
-          if (editing === n)
-            return (
-              <ProjectForm
-                key={n}
-                initialName={n}
-                initial={p}
-                dbs={view.dbs}
-            onGoDataSources={onGoDataSources}
-                onCancel={() => setEditing(undefined)}
-                onSave={async (name, next) => {
-                  const ok = await run(() => saveProject(name, next), "项目已保存");
-                  if (ok) setEditing(undefined);
-                  return ok;
-                }}
-              />
-            );
           const isDefault = view.default_projects.includes(n);
           const records = recordSummary(p);
           return (
