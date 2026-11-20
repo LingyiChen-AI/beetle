@@ -40,6 +40,8 @@ def no_real_token(monkeypatch):
     monkeypatch.setattr(gi, "_read_user_env", lambda name: None)
     for k in ("GITEE_TOKEN", "GITHUB_TOKEN", "MY_TOKEN"):
         monkeypatch.delenv(k, raising=False)
+    # 不调真实的 lark-cli 查通讯录
+    monkeypatch.setattr(bp, "_lark_search_user", lambda q: [])
 
 
 class FakeHttp:
@@ -418,3 +420,45 @@ def test_catalog_copy_is_identical_and_complete():
     for f in ("catalog.json", "SKILL.md", "scripts/sync_code.py", "_shared/bp_common.py"):
         assert (CATALOG / f).is_file(), f
     assert json.loads((CATALOG / "catalog.json").read_text(encoding="utf-8"))["name"] == "code-review"
+
+
+# ---------- 作者换成飞书真名 ----------
+
+def test_feishu_name_unique_pinyin_match_only():
+    seen = []
+
+    def search(q):
+        seen.append(q)
+        return {"hemengfei": [{"localized_name": "贺梦飞"}], "zhangsan": [{"localized_name": "张三"}, {"localized_name": "张三"}]}.get(q, [])
+
+    assert bp.feishu_name(["He-mengfei", "hemengfei319"], search) == "贺梦飞"
+    assert seen == ["hemengfei"], "两个名字规整后相同只搜一次"
+    assert bp.feishu_name(["Zhang-San", "zs"], search) is None, "重名不猜"
+    assert bp.feishu_name(["nobody"], search) is None
+    assert bp.feishu_name(["贺梦飞", "hmf"], search) is None, "已经是中文名不搜"
+    assert bp.feishu_name(["ab-1"], search) is None, "太短不搜"
+
+    def boom(q):
+        raise RuntimeError("lark-cli 挂了")
+
+    assert bp.feishu_name(["He-mengfei"], boom) is None
+
+
+def test_fetch_main_replaces_author_with_feishu_name(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITEE_TOKEN", TOKEN)
+    http = gitee_http()
+    out, err = io.StringIO(), io.StringIO()
+    code = bp.fetch_main(["--url", GITEE_URL], load_runtime=lambda: {},
+                         make_client=lambda pr, token, _h: bp.build_client(pr, token, http), out=out, err=err,
+                         name_lookup=lambda names: "真名")
+    assert code == 0, err.getvalue()
+    meta = json.loads(out.getvalue())
+    assert meta["author"] == "真名"
+    assert meta["author_platform_name"] and meta["author_platform_name"] != "真名"
+    # 查不到就保持平台上的名字
+    out = io.StringIO()
+    bp.fetch_main(["--url", GITEE_URL], load_runtime=lambda: {},
+                  make_client=lambda pr, token, _h: bp.build_client(pr, token, http), out=out, err=io.StringIO(),
+                  name_lookup=lambda names: None)
+    meta = json.loads(out.getvalue())
+    assert "author_platform_name" not in meta and meta["author"]

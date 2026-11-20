@@ -297,6 +297,51 @@ def _user(u):
     return u.get("name") or u.get("login") or ""
 
 
+def _pinyin_keys(*names):
+    """Gitee / GitHub 的名字和登录名常是拼音（He-mengfei、hemengfei319）：去掉非字母、转小写，当通讯录搜索词。"""
+    keys = []
+    for n in names:
+        k = re.sub(r"[^a-z]", "", (n or "").lower())
+        if len(k) >= 4 and k not in keys:
+            keys.append(k)
+    return keys
+
+
+def _lark_search_user(query):
+    """以机器人主人的用户身份按关键词搜飞书通讯录（只读），返回 users 列表；没装 lark-cli 返回 []。"""
+    import shutil
+    import subprocess
+
+    lark = shutil.which("lark-cli")
+    if not lark:
+        return []
+    run_js = os.path.join(os.path.dirname(lark), "node_modules", "@larksuite", "cli", "scripts", "run.js")
+    cmd = ["node", run_js] if os.path.isfile(run_js) else [lark]
+    p = subprocess.run([*cmd, "contact", "+search-user", "--as", "user", "--query", query],
+                       capture_output=True, encoding="utf-8", timeout=15)
+    if p.returncode != 0:
+        return []
+    return ((json.loads(p.stdout or "{}").get("data") or {}).get("users")) or []
+
+
+def feishu_name(names, search=None):
+    """把代码平台上的作者换成飞书里的真名：按拼音搜通讯录，**唯一命中**才用；重名、搜不到、出错都返回 None（保持原样）。
+    名字本身已经是中文的不搜。"""
+    if any(re.search(r"[一-鿿]", n or "") for n in names):
+        return None
+    search = search or _lark_search_user
+    for key in _pinyin_keys(*names):
+        try:
+            users = search(key)
+        except Exception:
+            return None
+        if len(users) == 1:
+            return (users[0].get("localized_name") or users[0].get("name") or "").strip() or None
+        if len(users) > 1:
+            return None  # 重名不猜
+    return None
+
+
 def normalize_meta(pr, detail, files):
     d = detail or {}
     head, base = d.get("head") or {}, d.get("base") or {}
@@ -313,6 +358,7 @@ def normalize_meta(pr, detail, files):
         "url": d.get("html_url") or pr.url,
         "title": d.get("title") or "",
         "author": _user(d.get("user")),
+        "author_login": (d.get("user") or {}).get("login") or "",
         "source_branch": head.get("ref") or "",
         "target_branch": base.get("ref") or "",
         "head_sha": head.get("sha") or "",
@@ -450,7 +496,7 @@ def _optional_runtime(load_runtime):
         return {}
 
 
-def fetch_main(argv=None, *, load_runtime, make_client=None, out=None, err=None):
+def fetch_main(argv=None, *, load_runtime, make_client=None, out=None, err=None, name_lookup=None):
     import argparse
 
     out = out or sys.stdout
@@ -479,6 +525,11 @@ def fetch_main(argv=None, *, load_runtime, make_client=None, out=None, err=None)
             raise PrError(str(e), EXIT_API)
         meta["project"] = name
         meta["token_env"] = token_env
+        # 作者换成飞书里的真名（通讯录唯一命中才换），原名留在 author_login 旁边
+        real = (name_lookup or feishu_name)([meta["author"], meta["author_login"]])
+        if real:
+            meta["author_platform_name"] = meta["author"]
+            meta["author"] = real
         if a.out:
             d = Path(a.out)
             d.mkdir(parents=True, exist_ok=True)
