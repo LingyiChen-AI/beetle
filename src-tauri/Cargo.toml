@@ -1,0 +1,53 @@
+[package]
+name = "beetle"
+version = "0.1.0"
+description = "甲虫（Beetle）：飞书群里的查 bug 机器人桌面客户端"
+edition = "2024"
+
+[lib]
+name = "beetle_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "7.0.0"
+keyring = { version = "3", default-features = false, features = ["apple-native", "windows-native"] }
+tauri-plugin-opener = "2"
+tauri-plugin-autostart = "2.7.0"
+tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
+rusqlite = { version = "0.41.1", features = ["bundled"] }
+uuid = { version = "1", features = ["v4"] }
+base64 = "0.23"
+flate2 = "1"
+futures-util = { version = "0.3", features = ["sink"] }
+prost = "0.14"
+reqwest = { version = "0.13", default-features = false, features = ["json", "native-tls"] }
+tokio = { version = "1", features = ["macros", "sync", "time", "rt"] }
+tokio-util = "0.7"
+regex = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+tokio-tungstenite = { version = "0.30", features = ["native-tls"] }
+# 直连数据源只读查询（beetle --db-query）。不用 sqlx：它的 sqlite 可选依赖与 rusqlite 的 libsqlite3-sys 版本冲突（cargo links 限制）。
+mysql_async = { version = "0.37", default-features = false, features = ["minimal"] }
+tokio-postgres = "0.7"
+postgres-native-tls = "0.5"
+native-tls = "0.2"
+mongodb = "3"
+# 0.55 的 Query 用 limit / offset 字段；0.56 起改成 limit_clause，升级时改 dbquery/guard.rs。
+sqlparser = "0.55"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"
+tokio = { version = "1", features = ["rt", "net", "io-util", "macros"] }
+
+[profile.dev.package."*"]
+opt-level = 2

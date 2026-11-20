@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: pnpm install --frozen-lockfile
+      - name: 类型检查
+        run: pnpm exec tsc --noEmit
+      - name: 前端测试
+        run: pnpm vitest run
+      - name: 技能脚本测试
+        run: |
+          python -m pip install pytest
+          python -m pytest src-tauri/resources/skills/_tests -q
+      - name: Rust 测试
+        working-directory: src-tauri
+        # 凭据库测试会读写同一个系统凭据库，单线程跑避免互相干扰
+        run: cargo test -- --test-threads=1

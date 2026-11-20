@@ -1,0 +1,8 @@
+{
+  "name": "code-review",
+  "display_name": "代码审查",
+  "description": "在自己的 Claude Code / Codex 会话里说「review 一下这个 PR <链接>」：拉取 Gitee / GitHub PR、同步代码到 PR 最新提交，用 ocr delegate 取要审的文件和按语言的审查规则，逐文件审查并给出覆盖率，对照上一轮结果做增量审查；只读，不在 PR 上评论",
+  "version": "1.1.0",
+  "requires": ["python", "git", "ocr"],
+  "config": "beetle"
+}

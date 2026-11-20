@@ -1,0 +1,83 @@
+/* 语义色 token：照抄定稿原型 docs/mockups/option-2-final.html 的 :root / 浅色 / 6 个主题色。
+   具体色值只允许出现在本文件；组件一律用 var(--xxx)。
+   <html data-theme="dark|light" data-accent="green|blue|indigo|purple|orange|teal"> 由 useAppearance 设置。 */
+
+/* ================= 调色板 =================
+   -d 深色模式主题色  -dt 深色下作文字 / 悬停用的亮一档  -don 深色下主按钮文字（按对比度选）
+   -l 浅色模式主题色（对白底 ≥ 4.5:1）  -lh 浅色悬停加深一档  浅色主按钮文字统一白色 */
+:root {
+  --vermilion-d: #e8441c; --vermilion-dt: #ff7a5c; --vermilion-don: #ffffff; --vermilion-l: #c2381a; --vermilion-lh: #9f2e15;
+  --green-d: #22c55e;  --green-dt: #4ade80;  --green-don: #0f172a;  --green-l: #15803d;  --green-lh: #166534;
+  --blue-d: #3b82f6;   --blue-dt: #60a5fa;   --blue-don: #0f172a;   --blue-l: #1d4ed8;   --blue-lh: #1e40af;
+  --indigo-d: #4f46e5; --indigo-dt: #818cf8; --indigo-don: #ffffff; --indigo-l: #4f46e5; --indigo-lh: #4338ca;
+  --purple-d: #a855f7; --purple-dt: #c084fc; --purple-don: #0f172a; --purple-l: #7e22ce; --purple-lh: #6b21a8;
+  --orange-d: #f97316; --orange-dt: #fb923c; --orange-don: #0f172a; --orange-l: #c2410c; --orange-lh: #9a3412;
+  --teal-d: #14b8a6;   --teal-dt: #2dd4bf;   --teal-don: #0f172a;   --teal-l: #0f766e;   --teal-lh: #115e59;
+  --white: #ffffff;
+}
+
+/* 选中的主题色 → --a-*（默认朱红，品牌色） */
+:root, :root[data-accent="vermilion"] { --a-d: var(--vermilion-d); --a-dt: var(--vermilion-dt); --a-don: var(--vermilion-don); --a-l: var(--vermilion-l); --a-lh: var(--vermilion-lh); }
+:root[data-accent="green"] { --a-d: var(--green-d); --a-dt: var(--green-dt); --a-don: var(--green-don); --a-l: var(--green-l); --a-lh: var(--green-lh); }
+:root[data-accent="blue"] { --a-d: var(--blue-d); --a-dt: var(--blue-dt); --a-don: var(--blue-don); --a-l: var(--blue-l); --a-lh: var(--blue-lh); }
+:root[data-accent="indigo"] { --a-d: var(--indigo-d); --a-dt: var(--indigo-dt); --a-don: var(--indigo-don); --a-l: var(--indigo-l); --a-lh: var(--indigo-lh); }
+:root[data-accent="purple"] { --a-d: var(--purple-d); --a-dt: var(--purple-dt); --a-don: var(--purple-don); --a-l: var(--purple-l); --a-lh: var(--purple-lh); }
+:root[data-accent="orange"] { --a-d: var(--orange-d); --a-dt: var(--orange-dt); --a-don: var(--orange-don); --a-l: var(--orange-l); --a-lh: var(--orange-lh); }
+:root[data-accent="teal"] { --a-d: var(--teal-d); --a-dt: var(--teal-dt); --a-don: var(--teal-don); --a-l: var(--teal-l); --a-lh: var(--teal-lh); }
+
+/* ================= 深色（默认） ================= */
+:root, :root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #020617; --panel: #0e1223; --card: #1b2336; --card2: #141b2d; --border: #334155; --line: #1e293b;
+  --fg: #f8fafc; --fg-soft: #cbd5e1; --muted: #94a3b8; --dim: #64748b;
+  --subtle: #1e293b; --hover: #243049; --hover-border: #475569; --input: #0a0f1e; --cb-border: #475569;
+  --popover: #0f172a; --tray: #111827;
+  --term-bg: #01040d; --term-fg: #cbd5e1; --term-hover: rgba(30, 41, 59, 0.4); --row-hover: rgba(27, 35, 54, 0.5);
+  --scroll-thumb: #1e293b; --scroll-thumb-hover: #334155;
+  --sw-off: #334155; --sw-knob: #cbd5e1;
+  --overlay: rgba(2, 6, 23, 0.72); --overlay-strong: rgba(2, 6, 23, 0.92); --qr-mask: rgba(2, 6, 23, 0.85);
+  --shadow-pop: 0 20px 60px rgba(0, 0, 0, 0.6); --shadow-toast: 0 10px 30px rgba(0, 0, 0, 0.5);
+  --wc-close: #c42b1c; --wc-close-fg: #ffffff;
+  --fs-bg: #f8fafc; --fs-fg: #1f2329; --fs-sub: #646a73; --fs-quote: #bbbfc4; --fs-link: #245bdb; --fs-skel: #e5e7eb; --fs-border: transparent;
+  --qr-bg: #ffffff; --qr-fg: #111111;
+  /* 主题色 */
+  --accent: var(--a-d); --accent-text: var(--a-dt); --on-accent: var(--a-don);
+  --accent-hover: color-mix(in srgb, var(--a-d) 82%, var(--white));
+  /* 语义色（不随主题色变） */
+  --success: #22c55e; --success-fg: #4ade80;
+  --warning: #f59e0b; --warning-fg: #fbbf24; --warning-strong: #fcd34d; --on-warning: #0f172a;
+  --danger: #ef4444;  --danger-fg: #f87171;  --danger-strong: #fca5a5; --on-danger: #ffffff;
+  --info: #60a5fa;    --info-fg: #93c5fd;    --on-info: #0f172a;
+}
+
+/* ================= 浅色 ================= */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f8fafc; --panel: #ffffff; --card: #f1f5f9; --card2: #f5f7fa; --border: #cbd5e1; --line: #e2e8f0;
+  --fg: #0f172a; --fg-soft: #334155; --muted: #475569; --dim: #64748b;
+  --subtle: #eaeff5; --hover: #e2e8f0; --hover-border: #94a3b8; --input: #ffffff; --cb-border: #94a3b8;
+  --popover: #ffffff; --tray: #ffffff;
+  --term-bg: #ffffff; --term-fg: #1e293b; --term-hover: rgba(226, 232, 240, 0.6); --row-hover: rgba(241, 245, 249, 0.9);
+  --scroll-thumb: #cbd5e1; --scroll-thumb-hover: #94a3b8;
+  --sw-off: #cbd5e1; --sw-knob: #ffffff;
+  --overlay: rgba(15, 23, 42, 0.38); --overlay-strong: rgba(15, 23, 42, 0.55); --qr-mask: rgba(255, 255, 255, 0.92);
+  --shadow-pop: 0 18px 48px rgba(15, 23, 42, 0.18); --shadow-toast: 0 10px 30px rgba(15, 23, 42, 0.16);
+  --wc-close: #c42b1c; --wc-close-fg: #ffffff;
+  --fs-bg: #ffffff; --fs-fg: #1f2329; --fs-sub: #646a73; --fs-quote: #bbbfc4; --fs-link: #245bdb; --fs-skel: #e5e7eb; --fs-border: #e2e8f0;
+  --qr-bg: #ffffff; --qr-fg: #111111;
+  --accent: var(--a-l); --accent-text: var(--a-l); --on-accent: var(--white); --accent-hover: var(--a-lh);
+  --success: #16a34a; --success-fg: #15803d;
+  --warning: #d97706; --warning-fg: #b45309; --warning-strong: #92400e; --on-warning: #0f172a;
+  --danger: #dc2626;  --danger-fg: #b91c1c;  --danger-strong: #991b1b; --on-danger: #ffffff;
+  --info: #2563eb;    --info-fg: #1d4ed8;    --on-info: #ffffff;
+}
+
+/* 派生色：半透明底 / 描边，统一用 color-mix 从语义色算 */
+:root {
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+  --accent-ring: color-mix(in srgb, var(--accent) 35%, transparent);
+  --success-soft: color-mix(in srgb, var(--success) 12%, transparent);
+  --warning-soft: color-mix(in srgb, var(--warning) 13%, transparent);
+  --danger-soft: color-mix(in srgb, var(--danger) 12%, transparent);
+  --info-soft: color-mix(in srgb, var(--info) 13%, transparent);
+}

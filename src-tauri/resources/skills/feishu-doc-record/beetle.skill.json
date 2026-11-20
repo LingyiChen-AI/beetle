@@ -1,0 +1,7 @@
+{
+  "name": "feishu-doc-record",
+  "display_name": "飞书文档记录",
+  "description": "把 bug 分析按固定结构追加到本群配置的飞书文档并回读确认",
+  "requires": ["python", "lark-cli"],
+  "settings_schema": null
+}

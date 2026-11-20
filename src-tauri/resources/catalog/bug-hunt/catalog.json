@@ -1,0 +1,8 @@
+{
+  "name": "bug-hunt",
+  "display_name": "查 bug",
+  "description": "在自己的 Claude Code / Codex 会话里说「帮我查这个 bug」：读群聊上下文、同步最新 release 代码、按项目关联的数据源只读查生产库、给出根因与修复建议，可建 Gitee / GitHub issue、追加到飞书文档",
+  "version": "1.2.0",
+  "requires": ["python", "lark_cli", "git"],
+  "config": "beetle"
+}

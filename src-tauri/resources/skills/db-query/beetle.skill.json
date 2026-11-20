@@ -1,0 +1,7 @@
+{
+  "name": "db-query",
+  "display_name": "数据库只读查询",
+  "description": "按项目关联的数据源只读查库：直连的由 Beetle 客户端连库并强制只读（Agent 看不到密码），配置为技能查询的交给用户自己的技能",
+  "requires": [],
+  "settings_schema": null
+}

@@ -1,0 +1,7 @@
+{
+  "name": "code-sync",
+  "display_name": "代码同步",
+  "description": "把本群负责项目的最新 release 分支同步到本机只读缓存目录",
+  "requires": ["python", "git"],
+  "settings_schema": null
+}

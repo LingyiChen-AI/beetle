@@ -1,0 +1,6 @@
+{"type":"thread.started","thread_id":"01a1f239-9494-7390-aab9-3564643216ff"}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item_0","type":"command_execution","command":"\"C:\\\\WINDOWS\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command ls","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_0","type":"command_execution","command":"\"C:\\\\WINDOWS\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command ls","aggregated_output":"\r\n\r\n    目录: C:/Users/USER/work/ws\r\n\r\n\r\nMode                 LastWriteTime         Length Name                                                                 \r\n----                 -------------         ------ ----                                                                 \r\n-a----        2026/11/19     13:13              3 a.txt                                                                \r\n\r\n\r\n","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"OK"}}
+{"type":"turn.completed","usage":{"input_tokens":64160,"cached_input_tokens":45056,"cache_write_input_tokens":0,"output_tokens":99,"reasoning_output_tokens":0}}

@@ -1,0 +1,7 @@
+{
+  "name": "issue-record",
+  "display_name": "建 issue",
+  "description": "把 bug 分析建成项目仓库（Gitee / GitHub）的 issue，同标题已存在就追加评论；token 从环境变量读",
+  "requires": ["python"],
+  "settings_schema": null
+}

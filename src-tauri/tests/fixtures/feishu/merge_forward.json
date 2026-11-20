@@ -1,0 +1,33 @@
+{
+  "schema": "2.0",
+  "header": {
+    "app_id": "cli_test",
+    "tenant_key": "tenant",
+    "event_type": "im.message.receive_v1"
+  },
+  "event": {
+    "sender": {
+      "sender_type": "user",
+      "sender_id": {
+        "open_id": "ou_user"
+      }
+    },
+    "message": {
+      "message_id": "om_message",
+      "chat_id": "oc_group",
+      "chat_type": "group",
+      "message_type": "merge_forward",
+      "content": "{\"content\": \"Merged and Forwarded Message\"}",
+      "create_time": "1763548800123",
+      "mentions": [
+        {
+          "key": "@_user_1",
+          "id": {
+            "open_id": "ou_bot"
+          },
+          "name": "查bug"
+        }
+      ]
+    }
+  }
+}

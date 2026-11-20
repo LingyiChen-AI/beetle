@@ -1,0 +1,7 @@
+{
+  "name": "pr-review",
+  "display_name": "PR 审查",
+  "description": "拉取 Gitee / GitHub PR 的元数据、diff 和描述，用 ocr delegate 取要审的文件和审查规则，读写每个 PR 上一轮的审查结果（增量复审）；只读，不在 PR 上评论",
+  "requires": ["python", "ocr"],
+  "settings_schema": null
+}

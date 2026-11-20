@@ -1,0 +1,7 @@
+{
+  "name": "chat-context",
+  "display_name": "群聊与私聊上下文",
+  "description": "读取本群最近的聊天记录、指定消息，以及机器人主人点名要看的私聊对话",
+  "requires": ["python", "lark-cli"],
+  "settings_schema": null
+}
