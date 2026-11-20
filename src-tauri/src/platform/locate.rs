@@ -35,7 +35,9 @@ pub fn find_in(name: &OsStr, dirs: &[PathBuf]) -> Option<PathBuf> {
     None
 }
 
-/// 除 PATH 外常见的 CLI 安装目录（桌面应用从开始菜单启动时 PATH 可能不全）。
+/// 除 PATH 外常见的 CLI 安装目录（桌面应用从开始菜单 / Dock 启动时 PATH 可能不全）。
+/// macOS / Linux 那份见 `env_path::fallback_dirs`：那边还管 nvm / homebrew / conda 等目录，
+/// 正常情况下 `env_path::init` 已经把它们并进 PATH 了，这里是 init 没跑或探测失败时的兜底。
 pub fn extra_dirs() -> Vec<PathBuf> {
     let mut v = Vec::new();
     let env_dir = |k: &str| std::env::var_os(k).map(PathBuf::from);
@@ -49,6 +51,8 @@ pub fn extra_dirs() -> Vec<PathBuf> {
     if let Some(l) = env_dir("LOCALAPPDATA") {
         v.push(l.join("Programs"));
     }
+    #[cfg(unix)]
+    v.extend(super::env_path::fallback_dirs());
     v
 }
 

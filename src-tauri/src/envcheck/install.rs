@@ -1,10 +1,18 @@
 //! 一键修复：把「检查项 + 动作」映射成修复计划，再用可注入的执行器执行。
 //! 外部命令只在用户点按钮后执行；输出逐行回调给界面。
 
-use super::{ActionKind, Probe, items};
+use super::{ActionKind, Probe, Status, items};
 use crate::platform::{locate, proc};
 use std::io::Read;
 use std::process::{Command, Stdio};
+use std::time::Duration;
+
+/// 开完登录终端后多久查一次登录状态。每次查都要拉起 CLI 子进程，别太密。
+const LOGIN_POLL: Duration = Duration::from_secs(3);
+/// 最多盯多久。超时不算失败流程，只是提示用户自己点「重新检查」。
+const LOGIN_WAIT: Duration = Duration::from_secs(180);
+/// 每隔多久往界面报一次「还在等」，免得看起来卡死。
+const LOGIN_TICK: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Os {
@@ -92,6 +100,10 @@ pub trait Runner: Send + Sync {
     /// 执行并逐行回调输出（stdout 与 stderr 合并），返回退出码。
     fn run(&self, program: &str, args: &[String], on_line: &mut dyn FnMut(&str)) -> Result<i32, String>;
     fn open_terminal(&self, args: &[String]) -> Result<(), String>;
+    /// 轮询登录状态之间的等待。单测注入空实现，不真睡。
+    fn sleep(&self, d: Duration) {
+        std::thread::sleep(d);
+    }
 }
 
 pub struct SystemRunner;
@@ -181,9 +193,9 @@ pub fn fix(
     match plan_for(id, action.kind, os)? {
         Plan::Manual(text) => Ok(text),
         Plan::Terminal { args } => {
-            on_line(&format!("已打开终端窗口：{}，请在窗口里完成登录，完成后回到这里点「重新检查」", args.join(" ")));
+            on_line(&format!("已打开终端窗口：{}，请在窗口里完成登录，这里会自动检测", args.join(" ")));
             runner.open_terminal(&args)?;
-            Ok("已打开登录终端，完成登录后请重新检查".into())
+            wait_for_login(id, probe, runner, on_line)
         }
         Plan::Run { program, args, manual_hint } => {
             on_line(&format!("> {program} {}", args.join(" ")));
@@ -194,4 +206,27 @@ pub fn fix(
             }
         }
     }
+}
+
+/// 开完登录终端后盯着这一项，登录一完成就自动返回，用户不用回来点「重新检查」。
+///
+/// 用轮询而不是监听窗口或凭据文件：Windows 的 `cmd /k` 和 macOS 的 Terminal 窗口登录完都不会退出，
+/// 各家 CLI 存凭据的位置、格式也都不一样；问它自己的 `auth status` 才是跨平台可靠的信号。
+fn wait_for_login(id: &str, probe: &dyn Probe, runner: &dyn Runner, on_line: &mut dyn FnMut(&str)) -> Result<String, String> {
+    let rounds = (LOGIN_WAIT.as_secs() / LOGIN_POLL.as_secs()).max(1);
+    for round in 1..=rounds {
+        runner.sleep(LOGIN_POLL);
+        if items::check(id, probe).status == Status::Ok {
+            on_line("已检测到登录完成");
+            return Ok("登录完成".into());
+        }
+        let waited = LOGIN_POLL.as_secs() * round;
+        if waited % LOGIN_TICK.as_secs() == 0 {
+            on_line(&format!("还在等待登录完成…（已等 {waited} 秒）"));
+        }
+    }
+    Err(format!(
+        "等了 {} 分钟还没检测到登录完成。已经登录成功的话点「重新检查」，没成功请看终端窗口里的提示",
+        LOGIN_WAIT.as_secs() / 60
+    ))
 }

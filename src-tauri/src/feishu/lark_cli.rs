@@ -112,38 +112,48 @@ fn kill_tree(child: &mut Child) {
 
 #[derive(Debug, Clone)]
 pub struct LarkCli {
-    run_js: PathBuf,
+    /// 要执行的程序：Windows 上是 node，其它平台直接就是 lark-cli 本身。
+    program: PathBuf,
+    /// Windows 上先传给 node 的 `run.js`。
+    script: Option<PathBuf>,
 }
 
 impl LarkCli {
-    /// 在 PATH 里找 `lark-cli` 并定位其 `run.js`。
+    /// 找 `lark-cli`。用 `locate::find`（PATH + 常见安装目录）而不是只查 PATH：
+    /// GUI 启动时 PATH 可能不全，见 `platform::env_path`。
+    ///
+    /// Windows 要绕到 `run.js` 是因为 npm 的 `.cmd` 壳会截断多行参数；Unix 上 `lark-cli`
+    /// 本身就是带 shebang 的脚本（nvm 下还是指向 `run.js` 的符号链接），直接执行即可。
+    /// 按 Windows 的 `<bin目录>/node_modules/...` 去推 Unix 的路径只会扑空——
+    /// npm 全局包在 Unix 上装在 `<prefix>/lib/node_modules/`，不在 bin 目录下。
     pub fn detect() -> Result<Self, String> {
-        let path = std::env::var_os("PATH").unwrap_or_default();
-        let names: &[&str] = if cfg!(windows) {
-            &["lark-cli.cmd", "lark-cli.exe", "lark-cli"]
-        } else {
-            &["lark-cli"]
-        };
-        let bin = std::env::split_paths(&path)
-            .flat_map(|dir| names.iter().map(move |name| dir.join(name)))
-            .find(|candidate| candidate.is_file())
+        let bin = crate::platform::locate::find("lark-cli")
             .ok_or("找不到 lark-cli，请先安装并登录（npm i -g @larksuite/cli）")?;
+        Self::from_bin(bin)
+    }
+
+    /// 由找到的可执行文件决定实际怎么调（拆出来便于单测两种布局）。
+    fn from_bin(bin: PathBuf) -> Result<Self, String> {
+        if !cfg!(windows) {
+            return Ok(Self { program: bin, script: None });
+        }
         let run_js = run_js_path(&bin);
         if !run_js.is_file() {
             return Err(format!("找到 lark-cli 但缺少 {}", run_js.display()));
         }
-        Ok(Self { run_js })
+        // 用绝对路径：env_clear 之后子进程那份 PATH 未必能解析出 node。
+        let node = crate::platform::locate::find("node").unwrap_or_else(|| "node".into());
+        Ok(Self { program: node, script: Some(run_js) })
     }
 
     /// 执行 lark-cli，返回 stdout（UTF-8）。非 0 退出码返回带 stderr 摘要的错误；
     /// 超过 `CALL_TIMEOUT` 杀掉进程并报错（同步接口，调用方应放进 spawn_blocking）。
     fn run(&self, args: &[&str]) -> Result<String, String> {
-        let mut command = Command::new("node");
-        command
-            .arg(&self.run_js)
-            .args(args)
-            .env_clear()
-            .envs(clean_env(std::env::vars_os()));
+        let mut command = Command::new(&self.program);
+        if let Some(script) = &self.script {
+            command.arg(script);
+        }
+        command.args(args).env_clear().envs(clean_env(std::env::vars_os()));
         run_command(command, CALL_TIMEOUT)
     }
 
@@ -314,6 +324,26 @@ mod tests {
             run_js_path(bin),
             Path::new("C:/npm/global/node_modules/@larksuite/cli/scripts/run.js")
         );
+    }
+
+    /// Unix 上 npm 全局包装在 `<prefix>/lib/node_modules`，bin 下只有指向 `run.js` 的符号链接，
+    /// 按 Windows 布局去推必然扑空——必须直接执行 bin，否则「已登录」也会被判成未登录。
+    #[cfg(unix)]
+    #[test]
+    fn unix_runs_the_cli_directly_instead_of_guessing_run_js() {
+        let t = tempfile::tempdir().unwrap();
+        let prefix = t.path();
+        let real = prefix.join("lib/node_modules/@larksuite/cli/scripts/run.js");
+        std::fs::create_dir_all(real.parent().unwrap()).unwrap();
+        std::fs::write(&real, "#!/usr/bin/env node\n").unwrap();
+        std::fs::create_dir_all(prefix.join("bin")).unwrap();
+        let bin = prefix.join("bin/lark-cli");
+        std::os::unix::fs::symlink(&real, &bin).unwrap();
+
+        assert!(!run_js_path(&bin).is_file(), "Windows 那套推法在这个布局下就是不存在的路径");
+        let cli = LarkCli::from_bin(bin.clone()).unwrap();
+        assert_eq!(cli.program, bin);
+        assert_eq!(cli.script, None, "不绕 node，直接执行 lark-cli");
     }
 
     #[test]

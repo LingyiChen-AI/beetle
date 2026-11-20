@@ -77,6 +77,11 @@ pub fn code_cache_dir() -> PathBuf {
     data_dir().join("code")
 }
 
+/// 上次探到的登录 shell PATH 的缓存文件（见 `platform::env_path`）。丢了只是下次启动少一点目录，不影响正确性。
+pub fn shell_path_cache() -> PathBuf {
+    data_dir().join("shell-path")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

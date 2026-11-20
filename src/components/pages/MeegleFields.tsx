@@ -265,7 +265,7 @@ export function MeegleFields({ value, k, onChange }: { value: MeegleTarget | nul
             <LogIn />
             {busy ? "处理中…" : st.installed ? "去登录" : "安装飞书项目 CLI"}
           </button>
-          {st.installed ? "会打开一个终端窗口，按提示在浏览器里授权，完成后点右上角刷新" : "安装完成后点「去登录」"}
+          {st.installed ? "会打开一个终端窗口，按提示在浏览器里授权，授权完成这里会自动刷新" : "安装完成后点「去登录」"}
         </div>
       )}
       {may && (

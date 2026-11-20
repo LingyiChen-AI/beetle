@@ -177,7 +177,9 @@ fn check_lark_login(it: EnvItem, p: &dyn Probe) -> EnvItem {
     }
     match p.lark_logged_in() {
         Ok(()) => set(it, Status::Ok, "用户身份已登录", None),
-        Err(_) => set(it, Status::Error, "用户身份未登录或登录已过期", act(ActionKind::Login, "去登录")),
+        // 带上原始错误：之前一律写「未登录」，结果 lark-cli 跑不起来（比如定位不到入口脚本）时
+        // 用户怎么登都不会变绿，还查不出原因。
+        Err(e) => set(it, Status::Error, format!("用户身份未登录或登录已过期：{e}"), act(ActionKind::Login, "去登录")),
     }
 }
 

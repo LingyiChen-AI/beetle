@@ -66,6 +66,9 @@ pub fn should_show_on_second_launch(args: &[String]) -> bool {
 }
 
 pub fn run() {
+    // 必须在建窗口、派生线程之前：GUI（Finder / Dock / 开机自启）启动时 PATH 来自 launchd，
+    // 缺 nvm / homebrew / conda 这些目录，node、lark-cli、python3 全找不到。见 platform::env_path。
+    platform::env_path::init();
     tauri::Builder::default()
         // 单实例必须最先注册：第二次启动只唤起已有窗口。
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
@@ -160,6 +163,8 @@ pub fn run() {
 
             tray::create(&handle)?;
             init_autostart(&handle);
+            // 问登录 shell 很慢（几秒），放到窗口起来之后的后台线程，只刷新缓存供下次启动用。
+            platform::env_path::spawn_cache_refresh();
             let launched_by_autostart = std::env::args().any(|a| a == AUTOSTART_ARG);
             if !launched_by_autostart {
                 tray::show_main(&handle);

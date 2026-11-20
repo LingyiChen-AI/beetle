@@ -322,6 +322,8 @@ fn plans_use_expected_packages() {
 struct FakeRunner {
     calls: Mutex<Vec<String>>,
     code: i32,
+    /// 等登录时「睡」过几次（不真睡）。
+    sleeps: Mutex<u32>,
 }
 
 impl Runner for FakeRunner {
@@ -333,6 +335,55 @@ impl Runner for FakeRunner {
     fn open_terminal(&self, args: &[String]) -> Result<(), String> {
         self.calls.lock().unwrap().push(format!("terminal {}", args.join(" ")));
         Ok(())
+    }
+    fn sleep(&self, _d: Duration) {
+        *self.sleeps.lock().unwrap() += 1;
+    }
+}
+
+/// 查到第 `ok_at` 次才说已登录，模拟用户在终端里慢慢扫码。
+struct LoginsLater {
+    inner: FakeProbe,
+    checks: Mutex<u32>,
+    ok_at: u32,
+}
+
+impl LoginsLater {
+    fn new(inner: FakeProbe, ok_at: u32) -> Self {
+        Self { inner, checks: Mutex::new(0), ok_at }
+    }
+    fn logged_in(&self) -> bool {
+        let mut n = self.checks.lock().unwrap();
+        *n += 1;
+        *n >= self.ok_at
+    }
+}
+
+impl Probe for LoginsLater {
+    fn find(&self, name: &str) -> Option<PathBuf> {
+        self.inner.find(name)
+    }
+    fn version(&self, program: &Path) -> Result<String, String> {
+        self.inner.version(program)
+    }
+    fn run(&self, program: &Path, args: &[&str]) -> Result<(i32, String), String> {
+        if args.first() == Some(&"auth") || args.first() == Some(&"login") {
+            let body = if self.logged_in() { "{\"loggedIn\": true}" } else { "{\"loggedIn\": false}" };
+            return Ok((0, body.into()));
+        }
+        self.inner.run(program, args)
+    }
+    fn lark_logged_in(&self) -> Result<(), String> {
+        if self.logged_in() { Ok(()) } else { Err("未登录".into()) }
+    }
+    fn tcp_reach(&self, host: &str, port: u16) -> bool {
+        self.inner.tcp_reach(host, port)
+    }
+    fn env_var(&self, key: &str) -> Option<String> {
+        self.inner.env_var(key)
+    }
+    fn proxy(&self) -> Option<String> {
+        self.inner.proxy()
     }
 }
 
@@ -354,9 +405,15 @@ fn fix_runs_injected_runner_and_streams_lines() {
 fn fix_opens_terminal_for_login_and_skips_healthy_items() {
     let mut p = FakeProbe::default().with("claude", "C:/c/claude.exe", "2.1.0");
     p.runs.insert("claude".into(), Ok((0, "{\"loggedIn\": false}".into())));
+    // 第 1 次是 fix 开头的那次检查（没登录），第 3 次轮询时登录成功
+    let late = LoginsLater::new(p, 3);
     let runner = FakeRunner::default();
-    install::fix("claude", &p, &runner, Os::Windows, &mut |_| {}).unwrap();
+    let mut lines = Vec::new();
+    let msg = install::fix("claude", &late, &runner, Os::Windows, &mut |l| lines.push(l.to_string())).unwrap();
     assert_eq!(runner.calls.lock().unwrap()[0], "terminal claude auth login");
+    assert_eq!(msg, "登录完成");
+    assert!(lines.iter().any(|l| l == "已检测到登录完成"), "{lines:?}");
+    assert_eq!(*runner.sleeps.lock().unwrap(), 2, "登录成功后不再继续轮询");
 
     let mut ok = FakeProbe::default().with("git", "C:/g/git.exe", "git version 2.40.0");
     ok.lark_login = true;
@@ -364,6 +421,30 @@ fn fix_opens_terminal_for_login_and_skips_healthy_items() {
     let msg = install::fix("git", &ok, &runner, Os::Windows, &mut |_| {}).unwrap();
     assert!(msg.contains("不需要修复"));
     assert!(runner.calls.lock().unwrap().is_empty());
+}
+
+#[test]
+fn login_wait_times_out_and_tells_user_to_recheck() {
+    let mut p = FakeProbe::default().with("claude", "C:/c/claude.exe", "2.1.0");
+    p.runs.insert("claude".into(), Ok((0, "{\"loggedIn\": false}".into())));
+    let runner = FakeRunner::default();
+    let mut lines = Vec::new();
+    let err = install::fix("claude", &p, &runner, Os::Windows, &mut |l| lines.push(l.to_string())).unwrap_err();
+    assert!(err.contains("重新检查"), "{err}");
+    // 3 分钟 / 3 秒 = 60 次；每 15 秒报一次进度 = 12 条
+    assert_eq!(*runner.sleeps.lock().unwrap(), 60);
+    assert_eq!(lines.iter().filter(|l| l.starts_with("还在等待登录完成")).count(), 12);
+}
+
+/// lark-cli 登录走的是另一条判定（`lark_logged_in`），一并盯住。
+#[test]
+fn lark_login_is_detected_without_manual_recheck() {
+    let p = FakeProbe::default().with("lark-cli", "C:/n/lark-cli.cmd", "1.0.87");
+    let late = LoginsLater::new(p, 2);
+    let runner = FakeRunner::default();
+    let msg = install::fix("lark_login", &late, &runner, Os::Windows, &mut |_| {}).unwrap();
+    assert_eq!(runner.calls.lock().unwrap()[0], "terminal lark-cli auth login");
+    assert_eq!(msg, "登录完成");
 }
 
 #[test]

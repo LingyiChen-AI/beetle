@@ -417,7 +417,10 @@ const localSkills = [
 
 /** 模拟安装：逐行推 env-install-log，最后发 env-install-done 并把该项改成正常。 */
 function simulateFix(id: string) {
-  const lines = id === "lark_login" ? ["已打开登录终端窗口", "等待扫码授权…", "登录成功：张三"] : ["winget install Python.Python.3.12", "正在下载 25.4 MB", "正在安装…", "已安装 Python 3.12.7"];
+  const lines =
+    id === "lark_login"
+      ? ["已打开终端窗口：lark-cli auth login，请在窗口里完成登录，这里会自动检测", "还在等待登录完成…（已等 15 秒）", "已检测到登录完成"]
+      : ["winget install Python.Python.3.12", "正在下载 25.4 MB", "正在安装…", "已安装 Python 3.12.7"];
   lines.forEach((line, i) => setTimeout(() => emit("env-install-log", { id, line }), 400 * (i + 1)));
   setTimeout(() => {
     const it = env.find((e) => e.id === id);
@@ -427,7 +430,7 @@ function simulateFix(id: string) {
       it.detail = id === "python" ? "winget 安装完成，已加入 PATH" : "已用用户身份登录（张三）";
       delete it.action;
     }
-    emit("env-install-done", { id, ok: true, message: lines[lines.length - 1] });
+    emit("env-install-done", { id, ok: true, message: id === "lark_login" ? "登录完成" : lines[lines.length - 1] });
   }, 400 * (lines.length + 1));
 }
 
