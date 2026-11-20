@@ -20,6 +20,7 @@ Python 脚本用 `{{PYTHON}}` 运行（不要加 `-I`），查库用 Beetle 客�
        命令以 `lark-cli im --help` 为准），搜到多个就列出来让用户选，不要猜。
      - 指定消息（如被引用的那条）：`{{PYTHON}} {{SKILL_DIR}}/scripts/chat_context.py --message-ids om_a,om_b`
      - 输出按时间正序，每条带发送人、消息类型、消息 ID。
+     - 消息里有 `[图片]`（截图常是页面现象、报错）时加 `--download-dir reports/res` 下载，输出末尾 `[附件]` 是图片路径，用读图工具直接看。
    - 确定：bug 现象、提出人（最早描述问题的人）、提出时间、涉及的店铺 / 租户 / 功能，以及属于哪个项目。
      已登记的项目（名称、说明、关联数据源）：`{{PYTHON}} {{SKILL_DIR}}/scripts/sync_code.py --list`。
    - 信息明显不够（不知道是哪个项目、没有任何可查的 ID）时，先问用户一句再查。

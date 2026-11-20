@@ -20,6 +20,7 @@
 
 1. **读上下文**：prompt 里的 chatId、messageIds，以及被引用的消息就是问题的来源。需要更多背景时拉最近群聊：
    `{{PYTHON}} {{SKILLS_DIR}}/chat-context/scripts/chat_context.py --limit 30`（最多 100），指定消息用 `--message-ids om_a,om_b`。
+   消息里有 `[图片]` 时加 `--download-dir reports/res` 下载（只对 `--message-ids` 指定的几条用），输出末尾 `[附件]` 是图片路径，用 Read 直接看，不要让人改用文字描述。
 2. **同步最新代码**：`{{PYTHON}} {{SKILLS_DIR}}/code-sync/scripts/sync_code.py <项目名>`，记下分支名和提交号。
    先读输出里提示的项目规则文件（如 AGENTS.md），再按问题搜相关代码。
 3. **回答**：只根据读到的代码回答，指出具体文件和行号。代码里找不到答案时直接说明，不要猜测、不要编造。

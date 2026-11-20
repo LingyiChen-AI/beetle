@@ -27,6 +27,26 @@ def fmt(m):
     return f"[{m.get('create_time', '')}] {sender} ({m.get('msg_type', '')}, {m.get('message_id', '')}{reply}):\n{content}\n"
 
 
+def with_download(args, download_dir):
+    """要下载附件时加 --download-resources，并在下载目录里运行（lark-cli 下到 ./lark-im-resources/）。"""
+    if not download_dir:
+        return args, None
+    Path(download_dir).mkdir(parents=True, exist_ok=True)
+    return args + ["--download-resources"], download_dir
+
+
+def print_attachments(download_dir):
+    """列出下载下来的图片 / 文件（绝对路径），供读图工具直接打开。"""
+    if not download_dir:
+        return
+    res = Path(download_dir) / "lark-im-resources"
+    files = sorted(p for p in res.rglob("*") if p.is_file()) if res.exists() else []
+    for p in files:
+        print(f"[附件] {p.resolve().as_posix()}")
+    if not files:
+        print("--- 没有可下载的图片 / 文件")
+
+
 def runtime_chat_id():
     chat_id = load_runtime().get("chat_id")
     if not chat_id:
@@ -73,18 +93,20 @@ def main():
     ap.add_argument("--chat-id", help="可不写；写了必须是本群的 chat_id")
     ap.add_argument("--limit", type=int, default=30)
     ap.add_argument("--message-ids")
+    ap.add_argument("--download-dir", help="把消息里的图片 / 文件下载到这个目录（截图里常有报错和页面现象）")
     a = ap.parse_args()
 
     own = runtime_chat_id()
     if a.message_ids:
         ids = parse_message_ids(a.message_ids)
         check_messages_in_chat(ids, own)
-        d = lark_json(["im", "+messages-mget", "--as", "user", "--message-ids", ",".join(ids)])
+        args = ["im", "+messages-mget", "--as", "user", "--message-ids", ",".join(ids)]
     else:
         chat_id = check_chat_arg(a.chat_id, own)
         n = max(1, min(a.limit, 100))
-        d = lark_json(["im", "+chat-messages-list", "--as", "user", "--chat-id", chat_id,
-                       "--page-size", str(n), "--order", "desc"])
+        args = ["im", "+chat-messages-list", "--as", "user", "--chat-id", chat_id,
+                "--page-size", str(n), "--order", "desc"]
+    d = lark_json(*with_download(args, a.download_dir))
 
     data = d.get("data", {})
     msgs = data.get("messages") or data.get("items") or []
@@ -92,6 +114,7 @@ def main():
     for m in msgs:
         print(fmt(m))
     print(f"--- 共 {len(msgs)} 条（按时间正序）")
+    print_attachments(a.download_dir)
 
 
 if __name__ == "__main__":

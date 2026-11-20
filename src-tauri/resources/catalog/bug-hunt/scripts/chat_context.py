@@ -26,6 +26,26 @@ def fmt(m):
     return f"[{m.get('create_time', '')}] {sender} ({m.get('msg_type', '')}, {m.get('message_id', '')}{reply}):\n{content}\n"
 
 
+def with_download(args, download_dir):
+    """要下载附件时加 --download-resources，并在下载目录里运行（lark-cli 下到 ./lark-im-resources/）。"""
+    if not download_dir:
+        return args, None
+    Path(download_dir).mkdir(parents=True, exist_ok=True)
+    return args + ["--download-resources"], download_dir
+
+
+def print_attachments(download_dir):
+    """列出下载下来的图片 / 文件（绝对路径），供读图工具直接打开。"""
+    if not download_dir:
+        return
+    res = Path(download_dir) / "lark-im-resources"
+    files = sorted(p for p in res.rglob("*") if p.is_file()) if res.exists() else []
+    for p in files:
+        print(f"[附件] {p.resolve().as_posix()}")
+    if not files:
+        print("--- 没有可下载的图片 / 文件")
+
+
 def bot_run_chat_id():
     """运行时配置带 trigger_* 字段（机器人拉起的运行）时返回本群 chat_id，否则 None（独立使用，不限制）。"""
     if not runtime_path().exists():
@@ -70,6 +90,7 @@ def main():
     ap.add_argument("--chat-id", help="群的 chat_id（oc_ 开头）；独立使用时必填")
     ap.add_argument("--limit", type=int, default=30)
     ap.add_argument("--message-ids")
+    ap.add_argument("--download-dir", help="把消息里的图片 / 文件下载到这个目录（截图里常有报错和页面现象）")
     a = ap.parse_args()
 
     own = bot_run_chat_id()
@@ -77,7 +98,7 @@ def main():
         ids = parse_message_ids(a.message_ids)
         if own:
             check_messages_in_chat(ids, own)
-        d = lark_json(["im", "+messages-mget", "--as", "user", "--message-ids", ",".join(ids)])
+        args = ["im", "+messages-mget", "--as", "user", "--message-ids", ",".join(ids)]
     else:
         if own:
             if a.chat_id and a.chat_id != own:
@@ -92,8 +113,9 @@ def main():
                 "只知道群名时先用 lark-cli 按群名搜出 chat_id，或改用 --message-ids om_a,om_b 读指定消息"
             )
         n = max(1, min(a.limit, 100))
-        d = lark_json(["im", "+chat-messages-list", "--as", "user", "--chat-id", chat_id,
-                       "--page-size", str(n), "--order", "desc"])
+        args = ["im", "+chat-messages-list", "--as", "user", "--chat-id", chat_id,
+                "--page-size", str(n), "--order", "desc"]
+    d = lark_json(*with_download(args, a.download_dir))
 
     data = d.get("data", {})
     msgs = data.get("messages") or data.get("items") or []
@@ -101,6 +123,7 @@ def main():
     for m in msgs:
         print(fmt(m))
     print(f"--- 共 {len(msgs)} 条（按时间正序）")
+    print_attachments(a.download_dir)
 
 
 if __name__ == "__main__":

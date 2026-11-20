@@ -306,6 +306,27 @@ def test_chat_context_message_ids_must_all_be_in_own_chat(tmp_path, monkeypatch)
     assert calls == [["im", "+messages-mget", "--as", "user", "--message-ids", "om_a"]]
 
 
+def test_chat_context_download_dir_fetches_images(tmp_path, monkeypatch, capsys):
+    write_runtime(tmp_path, monkeypatch, {"chat_id": "oc_own"})
+    monkeypatch.setattr(chat_context, "message_chat_id", lambda mid: "oc_own")
+    out = tmp_path / "res"
+    seen = []
+
+    def fake(args, cwd=None):
+        seen.append((args, cwd))
+        img = Path(cwd) / "lark-im-resources" / "img_1.png"
+        img.parent.mkdir(parents=True, exist_ok=True)
+        img.write_bytes(b"png")
+        return {"data": {"messages": [{"message_id": "om_a", "msg_type": "post", "content": "看图 [Image]"}]}}
+
+    monkeypatch.setattr(chat_context, "lark_json", fake)
+    monkeypatch.setattr(sys, "argv", ["chat_context.py", "--message-ids", "om_a", "--download-dir", str(out)])
+    chat_context.main()
+    args, cwd = seen[0]
+    assert "--download-resources" in args and cwd == str(out)
+    assert f"[附件] {(out / 'lark-im-resources' / 'img_1.png').resolve().as_posix()}" in capsys.readouterr().out
+
+
 def test_chat_context_message_chat_id_reads_get_message_api(monkeypatch):
     seen = []
     monkeypatch.setattr(chat_context, "lark_json",

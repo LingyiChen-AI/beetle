@@ -23,6 +23,9 @@
 1. **读上下文**
    - prompt 里的 chatId、messageIds，以及被引用的消息（quoted message）就是线索。机器人主人通常会回复（引用）bug 那条消息再 @你。
    - 拉最近群聊：`{{PYTHON}} {{SKILLS_DIR}}/chat-context/scripts/chat_context.py --limit 30`；更早的加大 `--limit`（最多 100）；指定消息用 `--message-ids om_a,om_b`。
+   - **有截图必须看**：trigger_text、parent_text 或群聊里出现 `[图片]`（截图里常是页面现象、报错、ID）时，下载下来用 Read 看：
+     `{{PYTHON}} {{SKILLS_DIR}}/chat-context/scripts/chat_context.py --message-ids <trigger_message_id>,<parent_message_id> --download-dir reports/res`
+     （ID 取自 prompt 的 JSON；群聊里其他带图的消息把它的 ID 也加上）。输出末尾的 `[附件]` 是图片路径。不要因为「看不到截图」就让人用文字描述。
    - **机器人主人说「看我和 XX 的对话 / 私聊」时**，读主人和这个人的私聊：
      `{{PYTHON}} {{SKILLS_DIR}}/chat-context/scripts/p2p_context.py --with <姓名> --download-dir reports/res`
      - 不需要也不能传触发消息：脚本从运行时配置里取触发消息，并核对发送人必须是机器人主人。
