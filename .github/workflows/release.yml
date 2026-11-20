@@ -1,6 +1,8 @@
 name: Release
 
-# 推送 v* 标签时打包发布：Windows（NSIS）+ macOS（通用包），更新包签名，生成 latest.json 供客户端检查更新。
+# 推送 v* 标签时打包发布，三个平台并行：
+#   Windows x64（NSIS 安装包）、macOS Apple 芯片（aarch64）、macOS Intel（x86_64）。
+# 更新包签名，tauri-action 把各平台合并进同一个 latest.json，客户端按自己的平台取更新。
 on:
   push:
     tags: ["v*"]
@@ -11,14 +13,23 @@ permissions:
 
 jobs:
   build:
+    name: build (${{ matrix.name }})
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: windows-latest
-            args: ""
-          - platform: macos-latest
-            args: "--target universal-apple-darwin"
+          - name: windows-x64
+            platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            args: "--bundles nsis"
+          - name: macos-arm64
+            platform: macos-latest
+            target: aarch64-apple-darwin
+            args: "--target aarch64-apple-darwin --bundles app,dmg"
+          - name: macos-x64
+            platform: macos-latest
+            target: x86_64-apple-darwin
+            args: "--target x86_64-apple-darwin --bundles app,dmg"
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
@@ -39,10 +50,13 @@ jobs:
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.target }}
+      # 按平台分别缓存依赖的编译产物：之后发版只重新编译本项目代码
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          key: ${{ matrix.target }}
+          cache-on-failure: true
 
       - run: pnpm install --frozen-lockfile
 
@@ -54,7 +68,13 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: Beetle ${{ github.ref_name }}
-          releaseBody: 下载对应系统的安装包安装；已安装的客户端会自动提示更新。
+          releaseBody: |
+            下载对应系统的安装包：
+            - Windows：`Beetle_<版本>_x64-setup.exe`
+            - Mac（Apple 芯片 M1/M2/M3/M4）：`Beetle_<版本>_aarch64.dmg`
+            - Mac（Intel 芯片）：`Beetle_<版本>_x64.dmg`
+
+            已安装的客户端会自动提示更新。
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
