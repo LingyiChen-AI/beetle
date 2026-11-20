@@ -429,19 +429,19 @@ def test_feishu_name_unique_pinyin_match_only():
 
     def search(q):
         seen.append(q)
-        return {"hemengfei": [{"localized_name": "贺梦飞"}], "zhangsan": [{"localized_name": "张三"}, {"localized_name": "张三"}]}.get(q, [])
+        return {"lisi": [{"localized_name": "李四"}], "zhangsan": [{"localized_name": "张三"}, {"localized_name": "张三"}]}.get(q, [])
 
-    assert bp.feishu_name(["He-mengfei", "hemengfei319"], search) == "贺梦飞"
-    assert seen == ["hemengfei"], "两个名字规整后相同只搜一次"
+    assert bp.feishu_name(["Li-si", "lisi007"], search) == "李四"
+    assert seen == ["lisi"], "两个名字规整后相同只搜一次"
     assert bp.feishu_name(["Zhang-San", "zs"], search) is None, "重名不猜"
     assert bp.feishu_name(["nobody"], search) is None
-    assert bp.feishu_name(["贺梦飞", "hmf"], search) is None, "已经是中文名不搜"
+    assert bp.feishu_name(["李四", "ls"], search) is None, "已经是中文名不搜"
     assert bp.feishu_name(["ab-1"], search) is None, "太短不搜"
 
     def boom(q):
         raise RuntimeError("lark-cli 挂了")
 
-    assert bp.feishu_name(["He-mengfei"], boom) is None
+    assert bp.feishu_name(["Li-si"], boom) is None
 
 
 def test_fetch_main_replaces_author_with_feishu_name(tmp_path, monkeypatch):

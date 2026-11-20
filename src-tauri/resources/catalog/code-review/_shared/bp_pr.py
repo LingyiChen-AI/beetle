@@ -298,7 +298,7 @@ def _user(u):
 
 
 def _pinyin_keys(*names):
-    """Gitee / GitHub 的名字和登录名常是拼音（He-mengfei、hemengfei319）：去掉非字母、转小写，当通讯录搜索词。"""
+    """Gitee / GitHub 的名字和登录名常是拼音（Zhang-san、zhangsan007）：去掉非字母、转小写，当通讯录搜索词。"""
     keys = []
     for n in names:
         k = re.sub(r"[^a-z]", "", (n or "").lower())
