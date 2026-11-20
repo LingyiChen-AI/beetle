@@ -8,24 +8,25 @@
 //! 解析是宽松的：允许 ```json 代码块包裹、前后有多余文字；数字写成字符串也认；严重度 / 状态认中文写法。
 //! 解析不了（不是 JSON、缺仓库或 PR 编号）返回 Err，调用方退回发纯文本。
 //!
-//! 卡片格式（照用户给的截图）：
+//! 卡片格式：
 //! - 标题：`代码审查 demo-service #29，3 项发现`；没有未处理的发现时 `代码审查 demo-service #29，未发现问题`
-//! - 正文：`【代码审查】demo-service #29` / PR 标题 / `**结论**：…`（过长截断加 …）/ `**发现 3 项**` + 每项一行
-//!   `- **[中]** （上一轮遗留，未处理）问题描述` / 上一轮已处理的单独列 / `规模：+11822/-109，69 个文件，作者 张三` /
-//!   有覆盖率时 `审查覆盖：5/6 个文件，跳过 1 个（a.sql:原因）` / PR 链接。
+//! - 正文分块（分隔线隔开）：PR 标题 + 灰色概要（仓库、作者、规模）/ 结论 / 发现（编号，严重度红橙灰）/ 上一轮已处理 /
+//!   底注（审查覆盖、PR 评论是否同步）/「查看 PR」按钮。见 `render`。
+//! - 纯文本兜底（`render_text`）沿用逐行格式：`【代码审查】…` / 标题 / 结论 / 发现 / 规模 / 覆盖 / 链接 / 评论结果。
 //!
 //! 每轮结果按 PR 存在 `<data>/pr-reviews/<平台>/<owner>/<repo>/<编号>.json`（owner / repo 小写），
 //! 下一轮审查由 `pr_review_state.py` 读出来做增量对比。
 
 use crate::dispatcher::pr_link::PrRef;
 use crate::platform::paths;
+use crate::pr_comment::CommentOutcome;
 use crate::redact::redact;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
 /// 结论最多显示多少字，超出截断加「…」。
-const CONCLUSION_MAX: usize = 200;
+const CONCLUSION_MAX: usize = 400;
 /// 单条发现最多显示多少字。
 const FINDING_MAX: usize = 300;
 /// 卡片里最多列多少条发现（其余提示去运行日志看）。
@@ -320,24 +321,127 @@ fn body_lines(r: &ReviewResult, link: bool) -> Vec<String> {
     lines
 }
 
+/// 严重度标签的颜色（飞书卡片 markdown 的 `<font color>`）。
+fn severity_color(s: Severity) -> &'static str {
+    match s {
+        Severity::High => "red",
+        Severity::Medium => "orange",
+        Severity::Low => "grey",
+    }
+}
+
+/// 卡片里的一条发现：`1. [中] （上一轮遗留，未处理）问题描述`，严重度带颜色。
+fn card_finding(i: usize, f: &Finding, incremental: bool) -> String {
+    format!(
+        "{i}. <font color='{}'>**[{}]**</font> {}{}",
+        severity_color(f.severity),
+        f.severity.label(),
+        status_note(f, incremental),
+        one_line(&f.text, FINDING_MAX)
+    )
+}
+
+/// 灰色概要行：`jev-rpa #34 · 作者 张三 · +2247 / -173 · 50 个文件`。
+fn summary_line(r: &ReviewResult) -> String {
+    let mut parts = vec![format!("{} #{}", r.repo, r.pr)];
+    if !r.author.trim().is_empty() {
+        parts.push(format!("作者 {}", one_line(&r.author, 40)));
+    }
+    parts.push(format!("+{} / -{}", r.additions, r.deletions));
+    parts.push(format!("{} 个文件", r.files));
+    parts.join(" · ")
+}
+
+/// PR 评论的结果说明（卡片底部、纯文本最后一行）；没评论（没有 PR）时为 None。
+fn comment_note(c: &CommentOutcome) -> Option<String> {
+    match c {
+        CommentOutcome::Posted(_) => Some("已同步到 PR 评论".into()),
+        CommentOutcome::Failed(e) => Some(format!("PR 评论未同步：{}", one_line(e, 80))),
+        CommentOutcome::Skipped => None,
+    }
+}
+
+fn md(content: String) -> Value {
+    json!({ "tag": "markdown", "content": content })
+}
+
 /// 渲染成飞书消息卡片（`msg_type: interactive` 的 content）。传进来之前应已 `redacted()`。
-pub fn render(r: &ReviewResult) -> Value {
+///
+/// 布局：标题头 → PR 标题 + 灰色概要（仓库、作者、规模）→ 分隔线 → 结论 → 分隔线 → 发现（编号、严重度带颜色）
+/// → 上一轮已处理 → 分隔线 → 底注（审查覆盖、PR 评论是否同步）→「查看 PR」按钮。
+pub fn render(r: &ReviewResult, comment: &CommentOutcome) -> Value {
+    let hr = json!({ "tag": "hr" });
+    let mut els = Vec::new();
+    let mut head = Vec::new();
+    if !r.title.trim().is_empty() {
+        head.push(format!("**{}**", one_line(&r.title, 120)));
+    }
+    head.push(format!("<font color='grey'>{}</font>", summary_line(r)));
+    els.push(md(head.join("\n")));
+    if !r.conclusion.trim().is_empty() {
+        els.push(hr.clone());
+        els.push(md(format!("**结论**\n{}", one_line(&r.conclusion, CONCLUSION_MAX))));
+    }
+    els.push(hr.clone());
+    let open = r.open_findings();
+    let incremental = is_incremental(r);
+    if open.is_empty() {
+        els.push(md("**未发现问题**".into()));
+    } else {
+        let mut lines = vec![format!("**发现 {} 项**", open.len())];
+        lines.extend(open.iter().take(FINDINGS_SHOWN).enumerate().map(|(i, f)| card_finding(i + 1, f, incremental)));
+        if open.len() > FINDINGS_SHOWN {
+            lines.push(format!("…另有 {} 项，见 PR 评论或客户端「运行日志」", open.len() - FINDINGS_SHOWN));
+        }
+        els.push(md(lines.join("\n")));
+    }
+    let resolved = r.resolved_findings();
+    if !resolved.is_empty() {
+        let mut lines = vec![format!("**上一轮已处理 {} 项**", resolved.len())];
+        lines.extend(
+            resolved
+                .iter()
+                .take(FINDINGS_SHOWN)
+                .map(|f| format!("<font color='grey'>[{}] {}</font>", f.severity.label(), one_line(&f.text, FINDING_MAX))),
+        );
+        els.push(md(lines.join("\n")));
+    }
+    let notes: Vec<String> = r.coverage.as_ref().map(coverage_line).into_iter().chain(comment_note(comment)).collect();
+    if !notes.is_empty() {
+        els.push(hr);
+        els.push(json!({ "tag": "note", "elements": [{ "tag": "plain_text", "content": notes.join(" · ") }] }));
+    }
+    let url = r.url.trim();
+    if url.starts_with("https://") {
+        let site = if url.contains("github.com") { "GitHub" } else { "Gitee" };
+        let mut actions = vec![json!({
+            "tag": "button", "type": "primary",
+            "text": { "tag": "plain_text", "content": format!("在 {site} 查看 PR") },
+            "url": url,
+        })];
+        if let CommentOutcome::Posted(c) = comment
+            && c.starts_with("https://")
+            && c != url
+        {
+            actions.push(json!({ "tag": "button", "type": "default", "text": { "tag": "plain_text", "content": "查看 PR 评论" }, "url": c }));
+        }
+        els.push(json!({ "tag": "action", "actions": actions }));
+    }
     json!({
         "config": { "wide_screen_mode": true },
         "header": {
             "template": "blue",
             "title": { "tag": "plain_text", "content": card_title(r) },
         },
-        "elements": [
-            { "tag": "markdown", "content": body_lines(r, true).join("\n") },
-        ],
+        "elements": els,
     })
 }
 
 /// 卡片发不出去时退回的纯文本（同样的内容，去掉加粗）。
-pub fn render_text(r: &ReviewResult) -> String {
+pub fn render_text(r: &ReviewResult, comment: &CommentOutcome) -> String {
     let mut lines = vec![card_title(r)];
     lines.extend(body_lines(r, false).into_iter().map(|l| l.replace("**", "")));
+    lines.extend(comment_note(comment));
     lines.join("\n")
 }
 
@@ -427,38 +531,71 @@ mod tests {
         }
     }
 
+    /// 卡片里各块的文字（markdown 和底注），按顺序；分隔线记成 "---"，按钮记成 "[按钮] 文字 链接"。
+    fn blocks(card: &Value) -> Vec<String> {
+        card["elements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| match e["tag"].as_str().unwrap() {
+                "markdown" => e["content"].as_str().unwrap().to_string(),
+                "hr" => "---".to_string(),
+                "note" => format!("[注] {}", e["elements"][0]["content"].as_str().unwrap()),
+                "action" => e["actions"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|b| format!("[按钮] {} {}", b["text"]["content"].as_str().unwrap(), b["url"].as_str().unwrap()))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                t => panic!("未知元素 {t}"),
+            })
+            .collect()
+    }
+
     #[test]
-    fn card_has_blue_header_title_and_screenshot_layout() {
-        let card = render(&sample());
+    fn card_layout_sections_colors_and_button() {
+        let posted = CommentOutcome::Posted("https://gitee.com/example/demo-service/pulls/29#note_1".into());
+        let card = render(&sample(), &posted);
         assert_eq!(card["header"]["template"], "blue");
         assert_eq!(card["header"]["title"]["content"], "代码审查 demo-service #29，3 项发现");
-        let md = card["elements"][0]["content"].as_str().unwrap();
-        let lines: Vec<&str> = md.lines().collect();
-        assert_eq!(lines[0], "【代码审查】demo-service #29");
-        assert_eq!(lines[1], "feat: 售后工单自动领取");
-        assert_eq!(lines[2], "**结论**：整体可合并，但有两处并发问题需要先修。");
-        assert_eq!(lines[3], "**发现 3 项**");
-        // 按严重度排序；增量复审时新发现也标注；换行压成一行
-        assert_eq!(lines[4], "- **[高]** （新发现）领取接口没有加锁，两台机器会重复领取 c.go:88");
-        assert_eq!(lines[5], "- **[中]** （上一轮遗留，未处理）判重查询走了从库，写后立读可能读不到 b.go:40");
-        assert_eq!(lines[6], "- **[低]** （新发现）日志里打印了完整请求体 a.go:12");
-        assert_eq!(lines[7], "**上一轮已处理 1 项**");
-        assert_eq!(lines[8], "- **[中]** （上一轮发现，已处理）超时没有重试 d.go:7");
-        assert_eq!(lines[9], "规模：+11822/-109，69 个文件，作者 张三");
-        assert_eq!(lines[10], "[https://gitee.com/example/demo-service/pulls/29](https://gitee.com/example/demo-service/pulls/29)");
+        assert_eq!(
+            blocks(&card),
+            vec![
+                "**feat: 售后工单自动领取**\n<font color='grey'>demo-service #29 · 作者 张三 · +11822 / -109 · 69 个文件</font>".to_string(),
+                "---".into(),
+                "**结论**\n整体可合并，但有两处并发问题需要先修。".into(),
+                "---".into(),
+                // 按严重度排序、编号、颜色；增量复审时新发现也标注；换行压成一行
+                [
+                    "**发现 3 项**",
+                    "1. <font color='red'>**[高]**</font> （新发现）领取接口没有加锁，两台机器会重复领取 c.go:88",
+                    "2. <font color='orange'>**[中]**</font> （上一轮遗留，未处理）判重查询走了从库，写后立读可能读不到 b.go:40",
+                    "3. <font color='grey'>**[低]**</font> （新发现）日志里打印了完整请求体 a.go:12",
+                ]
+                .join("\n"),
+                "**上一轮已处理 1 项**\n<font color='grey'>[中] 超时没有重试 d.go:7</font>".into(),
+                "---".into(),
+                "[注] 已同步到 PR 评论".into(),
+                "[按钮] 在 Gitee 查看 PR https://gitee.com/example/demo-service/pulls/29\n[按钮] 查看 PR 评论 https://gitee.com/example/demo-service/pulls/29#note_1".into(),
+            ]
+        );
     }
 
     #[test]
     fn first_round_findings_have_no_status_note_and_long_conclusion_is_truncated() {
         let mut r = sample();
         r.findings.retain(|f| f.status == FindingStatus::New);
-        r.conclusion = "很长".repeat(150);
-        let md = render(&r)["elements"][0]["content"].as_str().unwrap().to_string();
-        assert!(md.contains("- **[高]** 领取接口没有加锁"), "{md}");
-        assert!(!md.contains("（新发现）"));
-        let conclusion = md.lines().find(|l| l.starts_with("**结论**")).unwrap();
-        assert_eq!(conclusion.chars().count(), "**结论**：".chars().count() + CONCLUSION_MAX + 1);
+        r.conclusion = "很长".repeat(300);
+        let b = blocks(&render(&r, &CommentOutcome::Skipped));
+        let all = b.join("\n");
+        assert!(all.contains("1. <font color='red'>**[高]**</font> 领取接口没有加锁"), "{all}");
+        assert!(!all.contains("（新发现）"));
+        let conclusion = b.iter().find(|l| l.starts_with("**结论**")).unwrap();
+        assert_eq!(conclusion.chars().count(), "**结论**\n".chars().count() + CONCLUSION_MAX + 1);
         assert!(conclusion.ends_with('…'));
+        // 没有覆盖率、没评论：不出底注
+        assert!(!all.contains("[注]"));
     }
 
     #[test]
@@ -466,15 +603,20 @@ mod tests {
         let mut r = sample();
         r.findings.retain(|f| f.status == FindingStatus::Resolved);
         r.author.clear();
-        let card = render(&r);
+        let failed = CommentOutcome::Failed("未配置 GITEE_TOKEN（建 issue 用的同一个 token）".into());
+        let card = render(&r, &failed);
         assert_eq!(card["header"]["title"]["content"], "代码审查 demo-service #29，未发现问题");
-        let md = card["elements"][0]["content"].as_str().unwrap();
-        assert!(md.contains("**未发现问题**") && md.contains("**上一轮已处理 1 项**"));
-        assert!(md.contains("规模：+11822/-109，69 个文件\n"), "没有作者时不写「作者」：{md}");
-        let text = render_text(&r);
+        let all = blocks(&card).join("\n");
+        assert!(all.contains("**未发现问题**") && all.contains("**上一轮已处理 1 项**"));
+        assert!(all.contains("demo-service #29 · +11822 / -109 · 69 个文件"), "没有作者时不写「作者」：{all}");
+        assert!(all.contains("[注] PR 评论未同步：未配置 GITEE_TOKEN"), "{all}");
+        assert!(!all.contains("查看 PR 评论"));
+        let text = render_text(&r, &failed);
         assert!(text.starts_with("代码审查 demo-service #29，未发现问题\n【代码审查】demo-service #29"));
         assert!(!text.contains("**"));
-        assert!(text.ends_with("https://gitee.com/example/demo-service/pulls/29"));
+        assert!(text.contains("\nhttps://gitee.com/example/demo-service/pulls/29\n"));
+        assert!(text.ends_with("PR 评论未同步：未配置 GITEE_TOKEN（建 issue 用的同一个 token）"));
+        assert!(render_text(&r, &CommentOutcome::Skipped).ends_with("https://gitee.com/example/demo-service/pulls/29"));
     }
 
     #[test]
@@ -482,7 +624,7 @@ mod tests {
         let mut r = sample();
         r.findings[0].text = "配置里写死了 token=ghp_abcdefghijklmnopqrstuvwxyz0123".into();
         r.conclusion = "password: hunter2hunter2".into();
-        let card = render(&r.redacted()).to_string();
+        let card = render(&r.redacted(), &CommentOutcome::Skipped).to_string();
         assert!(!card.contains("ghp_abcdefghijklmnopqrstuvwxyz0123"));
         assert!(!card.contains("hunter2hunter2"));
     }
@@ -511,16 +653,17 @@ mod tests {
         .unwrap();
         let c = r.coverage.as_ref().expect("coverage 要解析出来");
         assert_eq!((c.total, c.reviewed, c.skipped.len()), (6, 2, 4));
-        let md = render(&r)["elements"][0]["content"].as_str().unwrap().to_string();
-        let lines: Vec<&str> = md.lines().collect();
+        let all = blocks(&render(&r, &CommentOutcome::Posted("https://x".into()))).join("\n");
+        assert!(all.contains("[注] 审查覆盖：2/6 个文件，跳过 4 个（a.sql:无法取 diff；b.go:文件过大；c.ts 等） · 已同步到 PR 评论"), "{all}");
+        let text = render_text(&r, &CommentOutcome::Skipped);
+        let lines: Vec<&str> = text.lines().collect();
         let i = lines.iter().position(|l| l.starts_with("规模：")).unwrap();
-        assert_eq!(lines[i + 1], "审查覆盖：2/6 个文件，跳过 4 个（a.sql:无法取 diff；b.go:文件过大；c.ts 等）");
-        assert!(lines[i + 2].starts_with("[https://"), "覆盖行在规模行和链接之间：{md}");
+        assert!(lines[i + 1].starts_with("审查覆盖：2/6"), "纯文本里覆盖行在规模行之后：{text}");
         // 没有跳过的只写比例
         let mut r2 = r.clone();
         r2.coverage.as_mut().unwrap().skipped.clear();
         r2.coverage.as_mut().unwrap().reviewed = 6;
-        assert!(render_text(&r2).contains("\n审查覆盖：6/6 个文件\n"));
+        assert!(render_text(&r2, &CommentOutcome::Skipped).contains("\n审查覆盖：6/6 个文件\n"));
         // 保存再读回不丢 coverage
         let v = serde_json::to_value(&r).unwrap();
         assert_eq!(v["coverage"]["skipped"][0]["path"], "a.sql");
@@ -532,7 +675,7 @@ mod tests {
         let r = sample();
         assert!(r.coverage.is_none());
         assert!(serde_json::to_value(&r).unwrap().get("coverage").is_none(), "没有覆盖率时不写这个字段");
-        let md = render(&r)["elements"][0]["content"].as_str().unwrap().to_string();
+        let md = blocks(&render(&r, &CommentOutcome::Skipped)).join("\n");
         assert!(!md.contains("审查覆盖"));
         // 覆盖率写坏了不影响整份结果
         let bad = parse(r#"{"repo":"a","pr":1,"findings":[],"coverage":"全部"}"#).unwrap();

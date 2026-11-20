@@ -1,4 +1,4 @@
-// 代码审查机器人的结果卡片：和后端 src-tauri/src/review_card.rs 同一套格式（标题、行文、严重度、遗留标注、规模行）。
+// 代码审查机器人的结果卡片：和后端 src-tauri/src/review_card.rs 的 render 同一套布局（标题、概要、结论、编号发现、底注、查看 PR）。
 // 运行记录的 final_reply 对代码审查运行存的是解析后的 JSON，运行日志按卡片样式预览。
 
 export type Severity = "high" | "medium" | "low";
@@ -22,11 +22,12 @@ export interface ReviewResult {
   author?: string;
   url?: string;
   head_sha?: string;
+  coverage?: { total?: number; reviewed?: number; skipped?: { path: string; reason?: string }[] };
 }
 
 const SEVERITY_LABEL: Record<Severity, string> = { high: "高", medium: "中", low: "低" };
 const SEVERITY_ORDER: Record<Severity, number> = { high: 0, medium: 1, low: 2 };
-const CONCLUSION_MAX = 200;
+const CONCLUSION_MAX = 400;
 const FINDING_MAX = 300;
 
 /** final_reply 是不是一份审查结果（JSON 对象，有 repo、pr、findings）；不是返回 null。 */
@@ -79,36 +80,50 @@ function statusNote(f: ReviewFinding, incremental: boolean): string {
 }
 
 export interface CardLine {
-  /** 行的种类：普通文字 / 加粗小标题 / 一条发现 / 链接 */
-  kind: "text" | "heading" | "finding" | "link";
+  /** 行的种类：PR 标题 / 灰色概要 / 小标题 / 正文 / 一条发现 / 已处理的发现 / 分隔线 / 底注 / 链接 */
+  kind: "title" | "meta" | "heading" | "text" | "finding" | "resolved" | "divider" | "note" | "link";
   text: string;
-  /** kind = finding 时：严重度标签（高 / 中 / 低） */
+  /** kind = finding / resolved 时：严重度 */
   severity?: Severity;
-  /** kind = heading 且是「结论」行时，加粗的是前缀 */
-  label?: string;
+  /** kind = finding 时：序号（从 1 开始） */
+  index?: number;
 }
 
-/** 卡片正文逐行（和后端卡片的 markdown 一一对应，只是没有 markdown 记号）。 */
+/** 卡片正文逐块（和后端卡片 render 一一对应，只是没有 markdown 记号）。 */
 export function cardLines(r: ReviewResult): CardLine[] {
-  const lines: CardLine[] = [{ kind: "text", text: `【代码审查】${r.repo} #${r.pr}` }];
-  if (r.title?.trim()) lines.push({ kind: "text", text: oneLine(r.title, 120) });
-  if (r.conclusion?.trim()) lines.push({ kind: "text", label: "结论：", text: oneLine(r.conclusion, CONCLUSION_MAX) });
+  const lines: CardLine[] = [];
+  if (r.title?.trim()) lines.push({ kind: "title", text: oneLine(r.title, 120) });
+  const meta = [`${r.repo} #${r.pr}`];
+  if (r.author?.trim()) meta.push(`作者 ${oneLine(r.author, 40)}`);
+  meta.push(`+${r.additions ?? 0} / -${r.deletions ?? 0}`, `${r.files ?? 0} 个文件`);
+  lines.push({ kind: "meta", text: meta.join(" · ") });
+  if (r.conclusion?.trim()) {
+    lines.push({ kind: "divider", text: "" }, { kind: "heading", text: "结论" }, { kind: "text", text: oneLine(r.conclusion, CONCLUSION_MAX) });
+  }
+  lines.push({ kind: "divider", text: "" });
   const open = openFindings(r);
   const incremental = r.findings.some((f) => statusOf(f) !== "new");
   if (open.length === 0) {
     lines.push({ kind: "heading", text: "未发现问题" });
   } else {
     lines.push({ kind: "heading", text: `发现 ${open.length} 项` });
-    for (const f of open) lines.push({ kind: "finding", severity: f.severity, text: statusNote(f, incremental) + oneLine(f.text, FINDING_MAX) });
+    open.forEach((f, i) => lines.push({ kind: "finding", index: i + 1, severity: f.severity, text: statusNote(f, incremental) + oneLine(f.text, FINDING_MAX) }));
   }
   const resolved = r.findings.filter((f) => statusOf(f) === "resolved");
   if (resolved.length > 0) {
     lines.push({ kind: "heading", text: `上一轮已处理 ${resolved.length} 项` });
-    for (const f of resolved) lines.push({ kind: "finding", severity: f.severity, text: statusNote(f, incremental) + oneLine(f.text, FINDING_MAX) });
+    for (const f of resolved) lines.push({ kind: "resolved", severity: f.severity, text: oneLine(f.text, FINDING_MAX) });
   }
-  let scale = `规模：+${r.additions ?? 0}/-${r.deletions ?? 0}，${r.files ?? 0} 个文件`;
-  if (r.author?.trim()) scale += `，作者 ${r.author.trim()}`;
-  lines.push({ kind: "text", text: scale });
+  const c = r.coverage;
+  if (c && typeof c.total === "number") {
+    let cov = `审查覆盖：${c.reviewed ?? 0}/${c.total} 个文件`;
+    const skipped = c.skipped ?? [];
+    if (skipped.length > 0) {
+      const shown = skipped.slice(0, 3).map((f) => (f.reason?.trim() ? `${oneLine(f.path, 120)}:${oneLine(f.reason, 60)}` : oneLine(f.path, 120)));
+      cov += `，跳过 ${skipped.length} 个（${shown.join("；")}${skipped.length > 3 ? " 等" : ""}）`;
+    }
+    lines.push({ kind: "divider", text: "" }, { kind: "note", text: cov });
+  }
   if (r.url?.trim()) lines.push({ kind: "link", text: r.url.trim() });
   return lines;
 }

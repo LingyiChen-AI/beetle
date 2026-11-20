@@ -14,6 +14,7 @@ pub mod migrate;
 pub mod onboard;
 pub mod platform;
 pub mod portable;
+pub mod pr_comment;
 pub mod rebrand;
 pub mod redact;
 pub mod review_card;

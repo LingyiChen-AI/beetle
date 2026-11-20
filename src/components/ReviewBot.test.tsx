@@ -117,22 +117,27 @@ describe("新增机器人向导：代码审查模板", () => {
 });
 
 describe("审查结果卡片", () => {
-  test("卡片行文与后端一致：标题、按严重度排序、遗留 / 已处理标注、规模行", () => {
+  test("卡片布局与后端一致：标题、概要、结论、编号发现、已处理、查看 PR", () => {
     expect(cardTitle(REVIEW)).toBe("代码审查 demo-service #29，3 项发现");
-    const lines = cardLines(REVIEW).map((l) => (l.severity ? `[${l.severity}] ` : "") + (l.label ?? "") + l.text);
+    const lines = cardLines(REVIEW).map((l) => `${l.kind}:` + (l.index ? `${l.index}. ` : "") + (l.severity ? `[${l.severity}] ` : "") + l.text);
     expect(lines).toEqual([
-      "【代码审查】demo-service #29",
-      "feat: 售后工单自动领取",
-      "结论：有一处并发问题需要先修。",
-      "发现 3 项",
-      "[high] （新发现）领取接口没有加锁 c.go:88",
-      "[medium] （上一轮遗留，未处理）判重查询走了从库 b.go:40",
-      "[low] （新发现）日志打印了完整请求体 a.go:12",
-      "上一轮已处理 1 项",
-      "[medium] （上一轮发现，已处理）超时没有重试 d.go:7",
-      "规模：+11822/-109，69 个文件，作者 张三",
-      "https://gitee.com/example/demo-service/pulls/29",
+      "title:feat: 售后工单自动领取",
+      "meta:demo-service #29 · 作者 张三 · +11822 / -109 · 69 个文件",
+      "divider:",
+      "heading:结论",
+      "text:有一处并发问题需要先修。",
+      "divider:",
+      "heading:发现 3 项",
+      "finding:1. [high] （新发现）领取接口没有加锁 c.go:88",
+      "finding:2. [medium] （上一轮遗留，未处理）判重查询走了从库 b.go:40",
+      "finding:3. [low] （新发现）日志打印了完整请求体 a.go:12",
+      "heading:上一轮已处理 1 项",
+      "resolved:[medium] 超时没有重试 d.go:7",
+      "link:https://gitee.com/example/demo-service/pulls/29",
     ]);
+    // 有覆盖率时出底注
+    const cov = cardLines({ ...REVIEW, coverage: { total: 6, reviewed: 5, skipped: [{ path: "a.sql", reason: "无法取 diff" }] } });
+    expect(cov.find((l) => l.kind === "note")?.text).toBe("审查覆盖：5/6 个文件，跳过 1 个（a.sql:无法取 diff）");
     const clean = { ...REVIEW, findings: [] };
     expect(cardTitle(clean)).toBe("代码审查 demo-service #29，未发现问题");
     expect(cardLines(clean).some((l) => l.text === "未发现问题")).toBe(true);
@@ -157,7 +162,8 @@ describe("审查结果卡片", () => {
     expect(within(card).getByTestId("review-card-title")).toHaveTextContent("代码审查 demo-service #29，3 项发现");
     expect(within(card).getAllByTestId("review-finding")).toHaveLength(4);
     expect(card).toHaveTextContent("（上一轮遗留，未处理）判重查询走了从库 b.go:40");
-    expect(card).toHaveTextContent("规模：+11822/-109，69 个文件，作者 张三");
+    expect(card).toHaveTextContent("demo-service #29 · 作者 张三 · +11822 / -109 · 69 个文件");
+    expect(card).toHaveTextContent("查看 PR");
     expect(screen.queryByTestId("reply-bubble")).not.toBeInTheDocument();
   });
 });

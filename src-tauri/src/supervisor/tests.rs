@@ -177,6 +177,8 @@ struct H {
     lark: Arc<FakeLark>,
     fakes: Arc<Mutex<HashMap<String, Arc<FakeTransport>>>>,
     created: Arc<Mutex<Vec<String>>>,
+    comments: crate::pr_comment::CommentCalls,
+    comment_fail: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl H {
@@ -246,8 +248,11 @@ fn harness_with(cfg: AppConfig, program: impl Fn(&std::path::Path) -> Option<Pat
     });
     let sink = Arc::new(RecSink::default());
     let lark = Arc::new(lark);
-    let sup = Supervisor::new(SupervisorDeps { runner: runner.clone(), transport, lark: lark.clone(), events: sink.clone() });
-    H { _home: home, dir, sup, sink, store, runner, lark, fakes, created }
+    let comments: crate::pr_comment::CommentCalls = Arc::default();
+    let comment_fail: Arc<std::sync::atomic::AtomicBool> = Arc::default();
+    let pr_comment = crate::pr_comment::fake(comments.clone(), comment_fail.clone());
+    let sup = Supervisor::new(SupervisorDeps { runner: runner.clone(), transport, lark: lark.clone(), events: sink.clone(), pr_comment });
+    H { _home: home, dir, sup, sink, store, runner, lark, fakes, created, comments, comment_fail }
 }
 
 fn harness(bots: Vec<Bot>) -> H {
@@ -465,6 +470,7 @@ async fn start_without_secret_sets_error_and_returns_err() {
         runner: h.runner.clone(),
         transport: Arc::new(|_b: &Bot| Err("未找到 cli_b1 的 App Secret，请在客户端里重新填写".to_string())),
         lark: h.lark.clone(),
+        pr_comment: crate::pr_comment::fake(Arc::default(), Arc::default()),
         events: h.sink.clone(),
     });
     let err = sup.start("b1").unwrap_err();
@@ -865,6 +871,7 @@ async fn startup_marks_leftover_runs_failed() {
         runner,
         transport: Arc::new(|_b: &Bot| Err("x".to_string())),
         lark: Arc::new(FakeLark::default()),
+        pr_comment: crate::pr_comment::fake(Arc::default(), Arc::default()),
         events: Arc::new(RecSink::default()),
     });
     for id in ["left", "left-q"] {
@@ -914,7 +921,13 @@ async fn event_sink_may_read_state_without_deadlock() {
     });
     let transport: TransportFactory = Arc::new(|_b: &Bot| Ok(FakeTransport::new() as Arc<dyn Transport>));
     let sink = Arc::new(ReentrantSink { sup: std::sync::OnceLock::new(), seen: Mutex::new(Vec::new()) });
-    let sup = Supervisor::new(SupervisorDeps { runner, transport, lark: Arc::new(FakeLark::default()), events: sink.clone() });
+    let sup = Supervisor::new(SupervisorDeps {
+        runner,
+        transport,
+        lark: Arc::new(FakeLark::default()),
+        events: sink.clone(),
+        pr_comment: crate::pr_comment::fake(Arc::default(), Arc::default()),
+    });
     assert!(sink.sup.set(sup.clone()).is_ok());
 
     // 放到普通线程里跑：死锁时只会超时，不会卡住整个测试进程
@@ -961,10 +974,17 @@ async fn pr_link_triggers_review_card_and_saves_state() {
     assert_eq!(mid, "om_1");
     assert_eq!(card["header"]["template"], "blue");
     assert_eq!(card["header"]["title"]["content"], "代码审查 demo-service #29，2 项发现");
-    let md = card["elements"][0]["content"].as_str().unwrap();
-    assert!(md.contains("- **[中]** （上一轮遗留，未处理）判重查询走了从库 b.go:40"), "{md}");
-    assert!(md.contains("规模：+120/-9，6 个文件，作者 张三"), "{md}");
+    let md = card_text(&card);
+    assert!(md.contains("<font color='orange'>**[中]**</font> （上一轮遗留，未处理）判重查询走了从库 b.go:40"), "{md}");
+    assert!(md.contains("作者 张三 · +120 / -9 · 6 个文件"), "{md}");
+    assert!(md.contains("已同步到 PR 评论"), "{md}");
     assert!(t.replies_to("om_1").is_empty(), "卡片发成功就不再发纯文本");
+    // 同步到 PR 评论：用 PR 的规范链接、默认 token 变量，正文是完整的审查结果
+    let calls = h.comments.lock().unwrap().clone();
+    assert_eq!(calls.len(), 1);
+    assert_eq!((calls[0].0.as_str(), calls[0].1.as_str()), (REVIEW_PR, "GITEE_TOKEN"));
+    assert!(calls[0].2.starts_with("### 代码审查：2 项发现"), "{}", calls[0].2);
+    assert!(calls[0].2.contains("判重查询走了从库 b.go:40"));
 
     until("记录回复消息 id", || h.run_for("om_1").is_some_and(|r| r.reply_message_id.is_some())).await;
     let r = h.run_for("om_1").unwrap();
@@ -987,6 +1007,46 @@ async fn pr_link_triggers_review_card_and_saves_state() {
     assert!(h.run_for("om_3").is_none() && t.replies_to("om_3").is_empty());
 }
 
+/// 卡片里所有文字块（markdown、底注、按钮链接）拼在一起，方便断言。
+fn card_text(card: &serde_json::Value) -> String {
+    card["elements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| {
+            e["content"]
+                .as_str()
+                .map(String::from)
+                .or_else(|| e["elements"][0]["content"].as_str().map(String::from))
+                .or_else(|| e["actions"][0]["url"].as_str().map(String::from))
+                .unwrap_or_default()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// PR 评论发不出去（例如没配 token）：群里照常回卡片，底注写原因，运行记录注明。
+#[tokio::test]
+async fn review_comment_failure_still_replies_card() {
+    let h = harness_with(
+        cfg_with(vec![review_bot("b1")]),
+        |dir| Some(fake_agent::make(dir, Mode::Replay { fixture: &fixture_path("claude-review.jsonl"), code: 0 })),
+        FakeLark::default(),
+    );
+    h.comment_fail.store(true, Ordering::SeqCst);
+    let t = start_connected(&h, "b1").await;
+    t.msg(pr_message("om_1", REVIEW_PR));
+    until("发出审查卡片", || !t.cards.lock().unwrap().is_empty()).await;
+    let card = t.cards.lock().unwrap()[0].1.clone();
+    let md = card_text(&card);
+    assert!(md.contains("PR 评论未同步：未配置 GITEE_TOKEN"), "{md}");
+    assert!(md.contains(REVIEW_PR), "仍有查看 PR 按钮：{md}");
+    until("记录回复消息 id", || h.run_for("om_1").is_some_and(|r| r.reply_message_id.is_some())).await;
+    let r = h.run_for("om_1").unwrap();
+    assert_eq!(r.status, RunStatus::Replied);
+    assert!(r.error.as_deref().unwrap_or_default().contains("PR 评论未同步"), "{:?}", r.error);
+}
+
 /// 最终回复不是约定的 JSON：退回发纯文本（打码后的原文），运行记录里注明。
 #[tokio::test]
 async fn review_output_not_json_falls_back_to_text() {
@@ -1000,6 +1060,7 @@ async fn review_output_not_json_falls_back_to_text() {
     until("回复纯文本", || !t.replies_to("om_1").is_empty()).await;
     assert_eq!(t.replies_to("om_1"), vec!["OK"]);
     assert!(t.cards.lock().unwrap().is_empty());
+    assert!(h.comments.lock().unwrap().is_empty(), "解析不了的结果不评论到 PR");
     until("记录结束", || h.run_for("om_1").is_some_and(|r| r.finished_at.is_some() && r.reply_message_id.is_some())).await;
     let r = h.run_for("om_1").unwrap();
     assert_eq!(r.status, RunStatus::Replied);

@@ -245,6 +245,7 @@ fn startup_purge_uses_configured_retention_days() {
             runner,
             transport: Arc::new(|_b: &config::Bot| Err("x".to_string())),
             lark: Arc::new(crate::test_support::FakeLark::default()),
+            pr_comment: crate::pr_comment::fake(Arc::default(), Arc::default()),
             events: Arc::new(Nop),
         })
     });

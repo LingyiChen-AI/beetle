@@ -22,6 +22,7 @@
 use crate::agent::{AgentEngine, PromptContext, claude::Claude, codex::Codex};
 use crate::dispatcher::queue::{Executor, Queue};
 use crate::dispatcher::pr_link::{self, PrDedupe, PrRef};
+use crate::pr_comment::CommentOutcome;
 use crate::dispatcher::{AgentNoticeThrottle, Decision, Dedupe, Job, attach_resume, copy, decide_all};
 use crate::feishu::lark_cli::{LarkOps, SystemLark};
 use crate::feishu::transport::{self, Client, Config, IncomingMessage, Status};
@@ -159,6 +160,8 @@ pub struct SupervisorDeps {
     pub transport: TransportFactory,
     pub lark: Arc<dyn LarkOps>,
     pub events: Arc<dyn EventSink>,
+    /// 代码审查结果同步到 PR 评论（测试里换成假的）。
+    pub pr_comment: crate::pr_comment::PrCommentFn,
 }
 
 impl SupervisorDeps {
@@ -172,6 +175,7 @@ impl SupervisorDeps {
             transport: feishu_transport(),
             lark: Arc::new(SystemLark),
             events,
+            pr_comment: crate::pr_comment::production(),
         }
     }
 }
@@ -876,7 +880,8 @@ impl Inner {
         self.reply_and_record(&t, &mut rec, &text).await;
     }
 
-    /// 代码审查的最终回复：按约定 JSON 解析 → 保存本轮结果 → 卡片回复（卡片发不出去改发同内容的纯文本）。
+    /// 代码审查的最终回复：按约定 JSON 解析 → 保存本轮结果 → 同步到 PR 评论 → 卡片回复（卡片发不出去改发同内容的纯文本）。
+    /// PR 评论失败不影响群里的回复，原因写在卡片底注和运行记录里。
     /// 解析不了就把（runner 已打码的）原文当纯文本发出去，并在运行记录里注明。卡片里的文字再过一遍打码。
     /// 运行记录的 `final_reply` 存解析后的 JSON，界面按卡片样式预览。
     async fn reply_review(&self, t: &Arc<dyn Transport>, rec: &mut RunRecord, text: &str, pr: Option<&PrRef>) {
@@ -894,19 +899,32 @@ impl Inner {
         }
         // 保存本轮结果：PR 取触发时识别的；@ 触发的从结果里的链接认
         let target = pr.cloned().or_else(|| pr_link::find_pr_links(&result.url).into_iter().next());
-        match target {
+        let comment = match target {
             Some(p) => {
                 let r = result.clone();
-                let saved = tokio::task::spawn_blocking(move || review_card::save_state(&p, &r))
+                let pr_for_save = p.clone();
+                let saved = tokio::task::spawn_blocking(move || review_card::save_state(&pr_for_save, &r))
                     .await
                     .unwrap_or_else(|_| Err("保存任务异常中断".into()));
                 if let Err(e) = saved {
                     log(format!("保存运行 {} 的审查结果失败：{e}", rec.id));
                 }
+                let env = crate::pr_comment::token_env(&p, &config::load().unwrap_or_default());
+                match (self.deps.pr_comment)(p, env, crate::pr_comment::comment_body(&result)).await {
+                    Ok(url) => CommentOutcome::Posted(url),
+                    Err(e) => {
+                        log(format!("运行 {} 的审查结果同步到 PR 评论失败：{e}", rec.id));
+                        rec.error = Some(format!("PR 评论未同步：{e}"));
+                        CommentOutcome::Failed(e)
+                    }
+                }
             }
-            None => log(format!("运行 {} 的审查结果里没有可识别的 PR 链接，本轮结果不保存", rec.id)),
-        }
-        let card = review_card::render(&result);
+            None => {
+                log(format!("运行 {} 的审查结果里没有可识别的 PR 链接，本轮结果不保存、不评论", rec.id));
+                CommentOutcome::Skipped
+            }
+        };
+        let card = review_card::render(&result, &comment);
         match t.reply_card(&rec.trigger_message_id, &card).await {
             Ok(id) => {
                 rec.reply_message_id = id;
@@ -918,7 +936,7 @@ impl Inner {
             Err(e) => {
                 log(format!("运行 {} 的审查卡片发送失败，改发纯文本：{e}", rec.id));
                 rec.error = Some(format!("卡片发送失败（{e}），已改发纯文本"));
-                self.reply_and_record(t, rec, &review_card::render_text(&result)).await;
+                self.reply_and_record(t, rec, &review_card::render_text(&result, &comment)).await;
             }
         }
     }
