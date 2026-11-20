@@ -22,6 +22,7 @@ pub trait SecretGetter: Send + Sync {
     fn get(&self, app_id: &str) -> Result<String, String>;
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 fn safe_task_name(task: &str) -> bool {
     !task.is_empty() && task.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
 }
@@ -29,6 +30,7 @@ fn safe_task_name(task: &str) -> bool {
 pub struct SystemLegacy;
 
 /// 运行一段 PowerShell，返回 stdout。
+#[cfg(windows)]
 fn powershell(script: &str) -> Result<String, String> {
     let mut cmd = Command::new("powershell");
     cmd.args(["-NoProfile", "-NonInteractive", "-Command", script])
@@ -46,6 +48,7 @@ fn powershell(script: &str) -> Result<String, String> {
 }
 
 // 进程名片段拆开写，避免 PowerShell 自己的命令行匹配上自己。
+#[cfg(windows)]
 const PS_BRIDGE_FILTER: &str = "$n = 'lark-channel-' + 'bridge'; \
     Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLine -like ('*' + $n + '*') -and $_.ProcessId -ne $PID }";
 

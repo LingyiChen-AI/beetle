@@ -174,6 +174,7 @@ fn user_env(_name: &str) -> Option<String> {
 }
 
 /// 解析 `reg query HKCU\Environment /v NAME` 的输出：`    NAME    REG_SZ    value`。
+#[cfg_attr(not(windows), allow(dead_code))]
 fn parse_reg_query(out: &str, name: &str) -> Option<String> {
     for line in out.lines() {
         let mut it = line.split_whitespace();

@@ -1,5 +1,5 @@
 // 客户端外壳：自绘标题栏 + 56px 图标栏 + 240px 机器人列表 + 工作台（照定稿原型 option-2-final.html）。
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   envCheck,
   envRequirements,
@@ -27,13 +27,14 @@ import EnvPage from "./components/pages/EnvPage";
 import ProjectsPage from "./components/pages/ProjectsPage";
 import SkillsPage from "./components/pages/SkillsPage";
 import SettingsPage from "./components/pages/SettingsPage";
-import StatsPage from "./components/pages/StatsPage";
 import Rail, { type Page } from "./components/Rail";
 import TitleBar from "./components/TitleBar";
 import UpdateBanner from "./components/UpdateBanner";
 import Workbench, { type Tab } from "./components/Workbench";
 import { AppearanceProvider } from "./theme/appearance";
-import { EmptyState } from "./components/ui";
+import { EmptyState, LoadingState } from "./components/ui";
+// 数据统计页带 echarts（约 600 KB），用到时再加载，不打进主包
+const StatsPage = lazy(() => import("./components/pages/StatsPage"));
 import { Bot as BotGlyph, Plus } from "lucide-react";
 
 const TABS: Tab[] = ["overview", "groups", "skills", "logs", "config"];
@@ -274,7 +275,11 @@ function Shell() {
                 )}
               </div>
             ))}
-          {page === "stats" && <StatsPage views={views} />}
+          {page === "stats" && (
+            <Suspense fallback={<LoadingState text="正在加载数据统计…" />}>
+              <StatsPage views={views} />
+            </Suspense>
+          )}
           {page === "projects" && <ProjectsPage onGoDataSources={() => setPage("datasources")} />}
           {page === "datasources" && <DataSourcesPage />}
           {page === "skills" && <SkillsPage env={env} />}

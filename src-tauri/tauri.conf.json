@@ -2,8 +2,8 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Beetle",
   "mainBinaryName": "beetle",
-  "version": "0.1.1",
-  "identifier": "dev.beetle.app",
+  "version": "0.1.2",
+  "identifier": "dev.beetle.desktop",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
