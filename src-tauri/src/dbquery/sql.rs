@@ -29,9 +29,9 @@ pub async fn query(
     let start = Instant::now();
     let max = conn.max_rows.max(1) as usize;
     let (columns, rows) = match kind {
-        DbKind::Mysql => mysql_query(host, port, conn, password, sql, max).await?,
+        DbKind::Mysql | DbKind::Starrocks => mysql_query(kind, host, port, conn, password, sql, max).await?,
         DbKind::Postgres => pg_query(host, port, conn, password, sql, max).await?,
-        _ => return Err("这个数据源不是 MySQL / PostgreSQL".into()),
+        _ => return Err("这个数据源不是 MySQL / PostgreSQL / StarRocks".into()),
     };
     let truncated = rows.len() >= max;
     Ok(QueryOutput { columns, rows, truncated, elapsed_ms: start.elapsed().as_millis() as u64 })
@@ -56,6 +56,7 @@ fn connect_timeout(host: &str, port: u16, conn: &DirectConn) -> (Duration, Strin
 // ---------- MySQL ----------
 
 async fn mysql_query(
+    kind: DbKind,
     host: &str,
     port: u16,
     conn: &DirectConn,
@@ -76,7 +77,12 @@ async fn mysql_query(
         .await
         .map_err(|_| timeout_msg)?
         .map_err(|e| format!("连接 {host}:{port} 失败：{e}"))?;
-    let setup = ["SET SESSION TRANSACTION READ ONLY".to_string(), format!("SET SESSION max_execution_time = {}", timeout_ms(conn))];
+    // StarRocks 没有只读事务和 max_execution_time：只设 query_timeout（秒），只读靠 guard 校验和只读账号。
+    let setup = if kind == DbKind::Starrocks {
+        vec![format!("SET query_timeout = {}", conn.timeout_secs.max(1))]
+    } else {
+        vec!["SET SESSION TRANSACTION READ ONLY".to_string(), format!("SET SESSION max_execution_time = {}", timeout_ms(conn))]
+    };
     for s in &setup {
         if let Err(e) = c.query_drop(s.as_str()).await {
             let _ = c.disconnect().await;

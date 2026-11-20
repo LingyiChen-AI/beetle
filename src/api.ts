@@ -116,7 +116,7 @@ export interface IssueTokenStatus {
 
 // ───────────── 数据源（src-tauri/src/store/datasource.rs）：用户自己配置的库，两种查询方式 ─────────────
 /** other 只能配合「自定义技能」查询。 */
-export type DbKind = "mysql" | "postgres" | "mongodb" | "other";
+export type DbKind = "mysql" | "postgres" | "starrocks" | "mongodb" | "other";
 export type DbAccess = "direct" | "skill";
 
 export interface SshTunnel {

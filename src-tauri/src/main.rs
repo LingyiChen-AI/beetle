@@ -28,5 +28,25 @@ fn main() {
         }
         return;
     }
+    // 运维用：beetle --set-db-password <别名>，从标准输入读数据库密码写入系统凭据库（与界面里保存数据源时一致）。
+    if args.get(1).map(String::as_str) == Some("--set-db-password") {
+        let Some(alias) = args.get(2) else {
+            eprintln!("用法：beetle --set-db-password <数据源别名>（密码从标准输入读入）");
+            std::process::exit(2);
+        };
+        let mut pw = String::new();
+        if std::io::stdin().read_to_string(&mut pw).is_err() || pw.trim_end_matches(['\r', '\n']).is_empty() {
+            eprintln!("没有从标准输入读到密码");
+            std::process::exit(1);
+        }
+        match beetle_lib::store::secrets::set_db_password(alias, pw.trim_end_matches(['\r', '\n'])) {
+            Ok(()) => println!("已写入数据源 {alias} 的密码"),
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     beetle_lib::run()
 }

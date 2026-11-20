@@ -101,7 +101,7 @@ async fn run_query_inner(ds: &DataSource, password: Option<&str>, req: &Value) -
     let conn = direct_of(ds)?;
     // 先校验（不连库），校验不过就不起隧道
     let checked = match ds.kind {
-        DbKind::Mysql | DbKind::Postgres => {
+        DbKind::Mysql | DbKind::Postgres | DbKind::Starrocks => {
             let raw = req.get("sql").and_then(Value::as_str).ok_or("sql 必填")?;
             Some(guard::check_sql(ds.kind, raw, conn.max_rows)?)
         }

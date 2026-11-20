@@ -37,6 +37,7 @@ import { Checkbox, EmptyState, LoadingState, Modal, NumberInput, Segmented, Sele
 export const KIND_META: Record<DbKind, { label: string; Icon: LucideIcon; port: number | null; desc: string }> = {
   mysql: { label: "MySQL", Icon: Database, port: 3306, desc: "直连或技能查询" },
   postgres: { label: "PostgreSQL", Icon: DatabaseZap, port: 5432, desc: "直连或技能查询" },
+  starrocks: { label: "StarRocks", Icon: DatabaseZap, port: 9030, desc: "MySQL 协议；建议用只读账号" },
   mongodb: { label: "MongoDB", Icon: Leaf, port: 27017, desc: "直连只支持 find" },
   other: { label: "其他", Icon: Boxes, port: null, desc: "只能用自定义技能查询" },
 };

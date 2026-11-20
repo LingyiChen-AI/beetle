@@ -20,12 +20,12 @@ pub fn check_sql(kind: DbKind, sql: &str, max_rows: u32) -> Result<String, Strin
         return Err("SQL 为空".into());
     }
     let dialect: Box<dyn Dialect> = match kind {
-        DbKind::Mysql => Box::new(MySqlDialect {}),
+        DbKind::Mysql | DbKind::Starrocks => Box::new(MySqlDialect {}),
         DbKind::Postgres => Box::new(PostgreSqlDialect {}),
         DbKind::Mongodb | DbKind::Other => return Err("这个数据源不是 SQL 库，不能用 SQL 查询".into()),
     };
     // PG 的 @> / <@ / @@ 是正常运算符，只在 MySQL 里拦 @变量。
-    if kind == DbKind::Mysql && has_at_outside_literals(sql) {
+    if matches!(kind, DbKind::Mysql | DbKind::Starrocks) && has_at_outside_literals(sql) {
         return Err("不允许使用 @ 变量（包括 @@ 系统变量）".into());
     }
     if let Some(f) = dangerous_func(sql) {
@@ -245,6 +245,14 @@ mod tests {
             assert!(!e.is_empty(), "{sql}");
             assert!(e.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)), "错误信息应为中文：{e}");
         }
+    }
+
+    #[test]
+    fn starrocks_uses_mysql_rules() {
+        let s = ok(DbKind::Starrocks, "SELECT id FROM voc.sessions WHERE shop_id = 1");
+        assert!(s.ends_with("LIMIT 50"), "{s}");
+        assert!(check_sql(DbKind::Starrocks, "SELECT @x", 200).is_err());
+        assert!(check_sql(DbKind::Starrocks, "INSERT INTO voc.t VALUES (1)", 200).is_err());
     }
 
     #[test]

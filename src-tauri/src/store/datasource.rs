@@ -13,6 +13,8 @@ use serde_json::{Value, json};
 pub enum DbKind {
     Mysql,
     Postgres,
+    /// StarRocks：MySQL 协议，但不支持只读事务和 max_execution_time，超时用 query_timeout。
+    Starrocks,
     Mongodb,
     Other,
 }
@@ -22,6 +24,7 @@ impl DbKind {
         match self {
             DbKind::Mysql => "mysql",
             DbKind::Postgres => "postgres",
+            DbKind::Starrocks => "starrocks",
             DbKind::Mongodb => "mongodb",
             DbKind::Other => "other",
         }
@@ -32,6 +35,7 @@ impl DbKind {
         match s.trim().to_ascii_lowercase().as_str() {
             "mysql" | "mariadb" => DbKind::Mysql,
             "postgres" | "postgresql" | "pg" => DbKind::Postgres,
+            "starrocks" | "sr" | "doris" => DbKind::Starrocks,
             "mongodb" | "mongo" => DbKind::Mongodb,
             _ => DbKind::Other,
         }
