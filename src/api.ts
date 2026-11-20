@@ -121,7 +121,14 @@ export interface MeegleTarget {
   fields: { field_key: string; field_name: string; value: string; label: string }[];
   /** 建单时由 AI 按问题判断的字段：存可选项，fallback = AI 没给值时用的选项 id */
   ai_fields: MeegleAiField[];
+  /** 默认处理人：分派规则没写、或判断不出时用 */
   assignee: { user_key: string; name: string } | null;
+  /** 候选处理人（含默认处理人），机器人按分派规则从里面选 */
+  assignees?: { user_key: string; name: string }[];
+  /** 分派规则（自然语言）；空 = 都派给默认处理人 */
+  assign_rule?: string;
+  /** 优先级规则（自然语言）；空 = 用默认规则 */
+  priority_rule?: string;
   role: { role_id: string; role_name: string } | null;
 }
 

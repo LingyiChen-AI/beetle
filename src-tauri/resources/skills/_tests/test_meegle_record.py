@@ -195,3 +195,36 @@ def test_ai_fields_fallback_and_errors(tmp_path):
 def test_plan_lists_fields_to_judge():
     s = bm.describe_plan("demo", {"record": {"meegle": True}, "meegle": AI_CFG})
     assert "--field 优先级=<P0/P1/P2>" in s and "--field 涉及端=<客户端/服务端>" in s
+
+
+ASSIGN_CFG = {**CFG, "assignee": {"user_key": "u_li", "name": "李四"},
+              "assignees": [{"user_key": "u_li", "name": "李四"}, {"user_key": "u_zh", "name": "张三"}],
+              "assign_rule": "前端问题给张三，其它给李四"}
+
+
+def owners_of(cli):
+    return json.loads(cli.created_fields()["role_owners"])
+
+
+def test_assignee_from_candidates(tmp_path):
+    proj = {"record": {"meegle": True}, "meegle": ASSIGN_CFG}
+    cli = FakeCli()
+    code, out, err = run_main(tmp_path, cli, project=proj, extra=["--assignee", "张三"])
+    assert code == 0, err
+    assert {"role": "r5", "owners": ["u_zh"]} in owners_of(cli)
+    assert "[注意]" not in out
+    # 不传 → 默认处理人
+    cli = FakeCli()
+    run_main(tmp_path, cli, project=proj)
+    assert {"role": "r5", "owners": ["u_li"]} in owners_of(cli)
+    # 名单外 → 改派默认并注明
+    cli = FakeCli()
+    code, out, _ = run_main(tmp_path, cli, project=proj, extra=["--assignee", "王五"])
+    assert code == 0
+    assert {"role": "r5", "owners": ["u_li"]} in owners_of(cli)
+    assert "「王五」不在候选名单（李四、张三），已改派给默认处理人 李四" in out
+
+
+def test_plan_shows_candidates_and_rules():
+    s = bm.describe_plan("demo", {"record": {"meegle": True}, "meegle": {**ASSIGN_CFG, "priority_rule": "P0：全挂"}})
+    assert "李四（默认）、张三" in s and "分派规则：前端问题给张三" in s and "优先级规则：P0：全挂" in s

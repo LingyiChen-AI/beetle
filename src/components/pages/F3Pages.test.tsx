@@ -652,7 +652,7 @@ describe("项目页：飞书项目工单 / 飞书任务 / 记录规则", () => {
       meegle_spaces: [{ project_key: "pk1", simple_name: "bot", name: "AI 客服" }],
       meegle_types: [{ type_key: "issue", name: "缺陷" }],
       meegle_form: form,
-      meegle_users: [{ user_key: "u_li", name: "李四", email: "" }],
+      meegle_users: (a: { query: string }) => (a.query.includes("王") ? [{ user_key: "u_w", name: "王五", email: "" }] : [{ user_key: "u_li", name: "李四", email: "" }]),
       lark_tasklists: [{ guid: "tl1", name: "调研" }],
       lark_users: [],
     });
@@ -682,9 +682,17 @@ describe("项目页：飞书项目工单 / 飞书任务 / 记录规则", () => {
     await userEvent.click(within(f).getByTestId("mg-f-demo-end"));
     await userEvent.click(screen.getByRole("option", { name: "客户端" }));
     expect(within(f).getByTestId("mg-auto-demo")).toHaveTextContent("名称 由机器人自动填写");
-    await userEvent.type(within(f).getByLabelText(/默认处理人/), "李四");
+    // 优先级规则预填默认内容
+    expect((within(f).getByLabelText("优先级规则") as HTMLTextAreaElement).value).toContain("P0：核心功能不可用");
+    // 候选处理人：第一个加的是默认；加第二个后出现分派规则
+    await userEvent.type(within(f).getByLabelText(/添加处理人/), "李四");
     await userEvent.click(await within(f).findByRole("option", { name: /李四/ }));
-    expect(within(f).getByTestId("mg-user-demo-picked")).toHaveTextContent("李四");
+    expect(within(f).getByTestId("mg-cand-demo-李四")).toHaveTextContent("默认");
+    expect(within(f).queryByLabelText(/分派规则/)).toBeNull();
+    await userEvent.type(within(f).getByLabelText(/添加处理人/), "王");
+    await userEvent.click(await within(f).findByRole("option", { name: /王五/ }));
+    await userEvent.click(within(f).getByRole("button", { name: "设 王五 为默认处理人" }));
+    await userEvent.type(within(f).getByLabelText(/分派规则/), "前端给李四");
 
     await userEvent.click(within(f).getByRole("button", { name: /建飞书任务/ }));
     await userEvent.click(await within(f).findByTestId("tk-list-demo"));
@@ -705,7 +713,13 @@ describe("项目页：飞书项目工单 / 飞书任务 / 记录规则", () => {
         { field_key: "end", field_name: "涉及端", value: "c1", label: "客户端" },
       ],
       ai_fields: [{ field_key: "priority", field_name: "优先级", field_type: "select", options: [{ id: "2", name: "P2" }], fallback: "2" }],
-      assignee: { user_key: "u_li", name: "李四" },
+      assignee: { user_key: "u_w", name: "王五" },
+      assignees: [
+        { user_key: "u_li", name: "李四" },
+        { user_key: "u_w", name: "王五" },
+      ],
+      assign_rule: "前端给李四",
+      priority_rule: "",
       role: { role_id: "r_fix", role_name: "缺陷处理人" },
     });
     expect(saved.project.feishu_task).toMatchObject({ tasklist_guid: "tl1", tasklist_name: "调研" });

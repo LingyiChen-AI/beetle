@@ -1,6 +1,7 @@
 // 项目表单里「建飞书项目工单」的配置：先确认飞书项目 CLI（meegle）已安装并登录，
-// 再用 CLI 拉空间 → 工单类型 → 建单必填字段（下拉选项）→ 角色，选好写进 project.meegle；默认处理人按姓名 / 邮箱搜。
-import { LogIn, RefreshCw } from "lucide-react";
+// 再用 CLI 拉空间 → 工单类型 → 建单必填字段（下拉选项）→ 角色，选好写进 project.meegle；
+// 处理人可选多个（标一个默认），配自然语言分派规则；优先级规则预填 P0～P3 定义，用户可改。
+import { LogIn, RefreshCw, RotateCcw, Star, X } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   errText,
@@ -30,8 +31,28 @@ export const emptyMeegle = (): MeegleTarget => ({
   fields: [],
   ai_fields: [],
   assignee: null,
+  assignees: [],
+  assign_rule: "",
+  priority_rule: "",
   role: null,
 });
+
+/** 优先级规则默认内容，和后端 config.rs 的 DEFAULT_PRIORITY_RULE 保持一致。 */
+export const DEFAULT_PRIORITY_RULE = [
+  "P0：核心功能不可用、数据错误或丢失，影响全部或大量客户（如服务宕机、无法登录、订单 / 金额算错），需要立即处理。",
+  "P1：主要功能异常，影响部分客户正常使用且没有替代办法，当天处理。",
+  "P2：一般功能问题，有替代办法或影响范围小，本迭代内修复。",
+  "P3：体验、文案、样式类小问题，不影响使用，择期处理。",
+].join("\n");
+
+type MUser = { user_key: string; name: string };
+
+/** 候选处理人：默认处理人排第一，按 user_key 去重（旧配置只有 assignee）。 */
+export function candidatesOf(t: MeegleTarget): MUser[] {
+  const out: MUser[] = [];
+  for (const u of [t.assignee, ...(t.assignees ?? [])]) if (u && !out.some((x) => x.user_key === u.user_key)) out.push(u);
+  return out;
+}
 
 /** CLI 查询结果缓存：每次调用要一两秒，重开弹窗时直接用；点刷新清空。失败的不缓存。 */
 const cache = new Map<string, Promise<unknown>>();
@@ -167,6 +188,18 @@ export function MeegleFields({ value, k, onChange }: { value: MeegleTarget | nul
       ai_fields: ai.filter((x) => x.field_key !== key),
       fields: [...t.fields.filter((x) => x.field_key !== key), ...(value ? [{ field_key: key, field_name: name, value, label }] : [])],
     });
+  const cands = candidatesOf(t);
+  const prioAi = ai.some((x) => x.field_key === "priority" || x.field_name.includes("优先级"));
+  /** 加候选处理人；还没有默认处理人时，第一个加的就是默认。 */
+  const addCandidate = (u: MUser) => {
+    if (cands.some((x) => x.user_key === u.user_key)) return;
+    onChange({ ...t, assignees: [...cands, u], assignee: t.assignee ?? u });
+  };
+  /** 移除候选；移除的是默认处理人时，默认改成剩下的第一个。 */
+  const removeCandidate = (u: MUser) => {
+    const rest = cands.filter((x) => x.user_key !== u.user_key);
+    onChange({ ...t, assignees: rest, assignee: t.assignee?.user_key === u.user_key ? (rest[0] ?? null) : t.assignee });
+  };
   /** AI 判断的可选范围里勾选 / 取消一个选项（至少留一个）。 */
   const toggleOpt = (f: MeegleForm["fields"][number], id: string) => {
     const cur = ai.find((x) => x.field_key === f.field_key)?.options.map((o) => o.id) ?? f.options.map((o) => o.id);
@@ -374,6 +407,33 @@ export function MeegleFields({ value, k, onChange }: { value: MeegleTarget | nul
             </div>
           )}
 
+          {form && (
+            <div>
+              <div className="flex items-center" style={{ gap: 8, marginBottom: 6 }}>
+                <label className="lbl" htmlFor={`mg-prio-${k}`} style={{ margin: 0 }}>
+                  优先级规则
+                </label>
+                <span style={{ fontSize: 12, color: "var(--dim)" }}>
+                  {prioAi ? "机器人按这个规则判断优先级，可以改成你们团队的标准" : "优先级当前是固定值，这条规则不生效"}
+                </span>
+                <span className="flex-1" />
+                {!!t.priority_rule?.trim() && t.priority_rule !== DEFAULT_PRIORITY_RULE && (
+                  <button type="button" className="btn btn-ghost btn-sm tr" onClick={() => onChange({ ...t, priority_rule: "" })}>
+                    <RotateCcw />
+                    恢复默认
+                  </button>
+                )}
+              </div>
+              <textarea
+                id={`mg-prio-${k}`}
+                className="inp"
+                rows={5}
+                value={t.priority_rule?.trim() ? t.priority_rule : DEFAULT_PRIORITY_RULE}
+                onChange={(e) => onChange({ ...t, priority_rule: e.target.value })}
+              />
+            </div>
+          )}
+
           {t.project_key && (
             <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div>
@@ -392,16 +452,58 @@ export function MeegleFields({ value, k, onChange }: { value: MeegleTarget | nul
               </div>
               <div>
                 <label className="lbl" htmlFor={`mg-user-${k}`}>
-                  默认处理人<span style={{ color: "var(--dim)", fontWeight: 400 }}>（可不填，交给人工分派）</span>
+                  添加处理人<span style={{ color: "var(--dim)", fontWeight: 400 }}>（可多选，点星标设为默认）</span>
                 </label>
                 <PersonPicker
                   id={`mg-user-${k}`}
                   placeholder="输入姓名或邮箱搜索"
-                  value={t.assignee ? { id: t.assignee.user_key, name: t.assignee.name } : null}
+                  value={null}
                   search={searchUsers}
-                  onChange={(v) => onChange({ ...t, assignee: v ? { user_key: v.id, name: v.name } : null })}
+                  onChange={(v) => v && addCandidate({ user_key: v.id, name: v.name })}
                 />
               </div>
+              {cands.length > 0 && (
+                <div className="flex flex-wrap" style={{ gridColumn: "1 / -1", gap: 6 }} data-testid={`mg-cands-${k}`}>
+                  {cands.map((u) => {
+                    const isDef = t.assignee?.user_key === u.user_key;
+                    return (
+                      <span key={u.user_key} className={`chip ${isDef ? "c-blue" : "c-mut"}`} style={{ height: 26, paddingRight: 4, gap: 4 }} data-testid={`mg-cand-${k}-${u.name}`}>
+                        <button
+                          type="button"
+                          className="lnk"
+                          aria-label={isDef ? `${u.name} 是默认处理人` : `设 ${u.name} 为默认处理人`}
+                          aria-pressed={isDef}
+                          title={isDef ? "默认处理人" : "设为默认处理人"}
+                          style={{ display: "inline-flex", color: isDef ? "var(--warning-fg)" : "var(--dim)" }}
+                          onClick={() => onChange({ ...t, assignee: u })}
+                        >
+                          <Star style={{ width: 13, height: 13, fill: isDef ? "currentColor" : "none" }} />
+                        </button>
+                        {u.name}
+                        {isDef && <span style={{ fontSize: 11, opacity: 0.8 }}>默认</span>}
+                        <button type="button" className="lnk" aria-label={`移除 ${u.name}`} style={{ display: "inline-flex", color: "var(--dim)" }} onClick={() => removeCandidate(u)}>
+                          <X style={{ width: 13, height: 13 }} />
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+              {cands.length > 1 && (
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <label className="lbl" htmlFor={`mg-assign-${k}`}>
+                    分派规则<span style={{ color: "var(--dim)", fontWeight: 400 }}>（可选，用自然语言写什么问题派给谁；不写就都派给默认处理人）</span>
+                  </label>
+                  <textarea
+                    id={`mg-assign-${k}`}
+                    className="inp"
+                    rows={2}
+                    placeholder={`例如：前端页面、样式问题派给${cands[1]?.name ?? "张三"}；数据和接口问题派给${cands[0]?.name ?? "李四"}；判断不了的派给默认处理人`}
+                    value={t.assign_rule ?? ""}
+                    onChange={(e) => onChange({ ...t, assign_rule: e.target.value })}
+                  />
+                </div>
+              )}
             </div>
           )}
 

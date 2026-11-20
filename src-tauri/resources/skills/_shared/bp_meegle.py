@@ -5,6 +5,8 @@
 - 名称取报告标题，描述取报告正文；人员类必填字段（如「报告人」）填当前登录的飞书项目用户。
 - 配置里 `ai_fields` 的字段（优先级、涉及端等）由机器人按问题判断，用 `--field 字段名=选项名` 传进来，这里换成选项 id；
   没传的用空间默认值兜底，连默认值也没有就报错（退出码 2），错误信息里列出可选项。
+- 处理人：机器人按项目的分派规则从候选处理人里选，用 `--assignee 姓名` 传进来；没传、或不在候选名单里，派给默认处理人
+  （不在名单时输出里注明「已改派给默认处理人」）。
 - 去重：同空间同类型里已有同名工单就追加评论（正文 + 「再次复现」时间），否则新建。
 - Windows 上 `meegle` 是 npm 的 .cmd 壳，中文和 JSON 参数经它转发不可靠，直接 `node <包>/bin/meegle.js` 调用。
 
@@ -197,7 +199,32 @@ def resolve_ai_fields(cfg, given):
     return values
 
 
-def build_fields(cfg, title, body, me_key, required, role_ids, given=None):
+def candidates(cfg):
+    """候选处理人，默认处理人排第一，按 user_key 去重。"""
+    out = []
+    for u in [cfg.get("assignee")] + list(cfg.get("assignees") or []):
+        if u and u.get("user_key") and not any(x["user_key"] == u["user_key"] for x in out):
+            out.append(u)
+    return out
+
+
+def pick_assignee(cfg, wanted):
+    """按 --assignee（姓名或 user_key）在候选里找；返回 (处理人 或 None, 说明 或 None)。"""
+    cands = candidates(cfg)
+    default = cfg.get("assignee") if (cfg.get("assignee") or {}).get("user_key") else None
+    if not wanted:
+        return default, None
+    w = wanted.strip()
+    hit = next((u for u in cands if w in (u.get("name"), u.get("user_key"))), None)
+    if hit:
+        return hit, None
+    names = "、".join(u.get("name") or u["user_key"] for u in cands) or "无"
+    if default:
+        return default, f"指定的处理人「{w}」不在候选名单（{names}），已改派给默认处理人 {default.get('name')}"
+    return None, f"指定的处理人「{w}」不在候选名单（{names}），没有默认处理人，未指派"
+
+
+def build_fields(cfg, title, body, me_key, required, role_ids, given=None, assignee=None):
     """建单字段：名称 / 描述 + 配置里固定的字段 + AI 判断的字段 + 人员类必填填自己 + 处理人角色。缺配置的必填字段报错（退出码 2）。"""
     values = {"name": title, "description": body}
     for f in cfg.get("fields") or []:
@@ -220,7 +247,7 @@ def build_fields(cfg, title, body, me_key, required, role_ids, given=None):
             EXIT_USAGE,
         )
     owners = []
-    assignee = (cfg.get("assignee") or {}).get("user_key")
+    assignee = (assignee or {}).get("user_key")
     role = (cfg.get("role") or {}).get("role_id")
     if assignee and role:
         owners.append({"role": role, "owners": [assignee]})
@@ -237,7 +264,7 @@ def detail_url(host, cfg, wid):
     return f"https://{host}/{space}/{cfg.get('work_item_type') or 'issue'}/detail/{wid}"
 
 
-def record_work_item(client, cfg, title, body, now=None, given=None):
+def record_work_item(client, cfg, title, body, now=None, given=None, wanted=None, notes=None):
     """同名工单存在 → 追加评论；否则新建。返回 ("created" | "commented", url)。"""
     pk, wt = cfg["project_key"], cfg.get("work_item_type") or "issue"
     host = client.host()
@@ -247,7 +274,10 @@ def record_work_item(client, cfg, title, body, now=None, given=None):
         client.comment(pk, existing, f"{body}\n\n---\n再次复现：{(now or datetime.now()):%Y-%m-%d %H:%M}")
         return "commented", detail_url(host, cfg, existing)
     me_key = client.me()
-    fields = build_fields(cfg, title, body, me_key, client.required_fields(pk, wt), client.role_ids(pk, wt), given)
+    who, note = pick_assignee(cfg, wanted)
+    if note and notes is not None:
+        notes.append(note)
+    fields = build_fields(cfg, title, body, me_key, client.required_fields(pk, wt), client.role_ids(pk, wt), given, who)
     return "created", detail_url(host, cfg, client.create(pk, wt, fields))
 
 
@@ -258,7 +288,9 @@ def describe_plan(name, project):
         return f"项目 {name} 没有勾选「建飞书项目工单」"
     if not cfg.get("project_key"):
         return f"项目 {name} 勾选了「建飞书项目工单」，但还没选空间"
-    who = (cfg.get("assignee") or {}).get("name") or "不指定"
+    cands = candidates(cfg)
+    default = (cfg.get("assignee") or {}).get("name")
+    who = "、".join((u.get("name") or u["user_key"]) + ("（默认）" if u.get("name") == default else "") for u in cands) or "不指定"
     role = (cfg.get("role") or {}).get("role_name") or "—"
     fields = "、".join(f"{f.get('field_name') or f.get('field_key')}={f.get('label') or f.get('value')}" for f in cfg.get("fields") or [])
     judge = "；".join(
@@ -267,7 +299,9 @@ def describe_plan(name, project):
     return (f"项目 {name}：飞书项目空间 {cfg.get('space_name') or cfg['project_key']}，"
             f"类型 {cfg.get('work_item_type_name') or cfg.get('work_item_type') or 'issue'}，处理人 {who}（{role}）"
             + (f"，固定字段 {fields}" if fields else "")
-            + (f"。建单时按问题判断并传：{judge}" if judge else ""))
+            + (f"。建单时按问题判断并传：{judge}" if judge else "")
+            + (f"。分派规则：{cfg['assign_rule'].strip()}（选好用 --assignee 姓名 传）" if (cfg.get("assign_rule") or "").strip() and len(cands) > 1 else "")
+            + (f"。优先级规则：{cfg['priority_rule'].strip()}" if (cfg.get("priority_rule") or "").strip() else ""))
 
 
 def main(argv=None, *, load_runtime, client=None, out=None, err=None, now=None):
@@ -278,6 +312,7 @@ def main(argv=None, *, load_runtime, client=None, out=None, err=None, now=None):
     ap.add_argument("--file", help="报告 markdown，第一行 '## <标题>'")
     ap.add_argument("--plan", action="store_true", help="只打印本项目的飞书项目工单配置，不建单")
     ap.add_argument("--field", action="append", default=[], help="AI 判断的字段，格式 字段名=选项名，可重复")
+    ap.add_argument("--assignee", help="按分派规则选的处理人姓名（必须在候选名单里，否则派给默认处理人）")
     a = ap.parse_args(argv)
     try:
         rt = load_runtime()
@@ -299,13 +334,16 @@ def main(argv=None, *, load_runtime, client=None, out=None, err=None, now=None):
             raise MeegleError(f"读不了报告文件 {a.file}：{e.strerror or e}", EXIT_USAGE)
         title, body = parse_report(text)
         given = parse_field_args(a.field)
-        action, url = record_work_item(client or Client(), cfg, title, body, now=now, given=given)
+        notes = []
+        action, url = record_work_item(client or Client(), cfg, title, body, now=now, given=given, wanted=a.assignee, notes=notes)
     except IssueError as e:
         print(f"[失败] {e}", file=err)
         return e.code
     except Exception as e:
         print(f"[失败] {type(e).__name__}: {e}", file=err)
         return EXIT_API
+    for n in notes:
+        print(f"[注意] {n}", file=out)
     if action == "created":
         print(f"已创建飞书项目工单：{url}", file=out)
     else:

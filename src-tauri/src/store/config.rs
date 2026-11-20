@@ -186,11 +186,42 @@ pub struct MeegleTarget {
     /// 建单时由 AI 按问题判断的字段（如优先级、涉及端、业务线）：存可选项，机器人选好用 `--field 名称=选项` 传给脚本
     #[serde(default)]
     pub ai_fields: Vec<MeegleAiField>,
-    /// 默认处理人：放进 `role` 这个角色
+    /// 默认处理人：分派规则没写、或判断不出该派给谁时用；放进 `role` 这个角色
     #[serde(default)]
     pub assignee: Option<MeegleUser>,
+    /// 候选处理人（含默认处理人）；机器人按分派规则从里面选，用 `--assignee 姓名` 传给脚本
+    #[serde(default)]
+    pub assignees: Vec<MeegleUser>,
+    /// 分派规则（自然语言），如「前端问题给张三，RPA 相关给李四」；空 = 都派给默认处理人
+    #[serde(default)]
+    pub assign_rule: String,
+    /// 优先级规则（自然语言，P0～P3 各是什么情况）；空 = 用 `DEFAULT_PRIORITY_RULE`
+    #[serde(default)]
+    pub priority_rule: String,
     #[serde(default)]
     pub role: Option<MeegleRole>,
+}
+
+/// 优先级规则的默认内容（项目页预填，用户可改）。
+pub const DEFAULT_PRIORITY_RULE: &str = "P0：核心功能不可用、数据错误或丢失，影响全部或大量客户（如服务宕机、无法登录、订单 / 金额算错），需要立即处理。\nP1：主要功能异常，影响部分客户正常使用且没有替代办法，当天处理。\nP2：一般功能问题，有替代办法或影响范围小，本迭代内修复。\nP3：体验、文案、样式类小问题，不影响使用，择期处理。";
+
+impl MeegleTarget {
+    /// 候选处理人（默认处理人排第一，去重）；旧配置只有 `assignee` 时就是它一个。
+    pub fn candidates(&self) -> Vec<&MeegleUser> {
+        let mut out: Vec<&MeegleUser> = self.assignee.iter().collect();
+        for u in &self.assignees {
+            if !out.iter().any(|x| x.user_key == u.user_key) {
+                out.push(u);
+            }
+        }
+        out
+    }
+
+    /// 实际生效的优先级规则。
+    pub fn priority_rule_or_default(&self) -> &str {
+        let r = self.priority_rule.trim();
+        if r.is_empty() { DEFAULT_PRIORITY_RULE } else { r }
+    }
 }
 
 fn default_work_item_type() -> String {

@@ -113,6 +113,15 @@ pub fn projects_block(group: &Group, projects: &BTreeMap<String, Project>) -> St
 ")
 }
 
+fn one_line(s: &str) -> String {
+    s.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" ")
+}
+
+/// 优先级交给 AI 判断时，才把优先级规则写给 Agent。
+fn judge_priority(m: &crate::store::config::MeegleTarget) -> bool {
+    m.ai_fields.iter().any(|f| f.field_key == "priority" || f.field_name.contains("优先级"))
+}
+
 /// 项目的记录方式（建 issue / 写飞书文档，可同时选），写进项目清单给 Agent 看。
 pub fn record_desc(p: &Project) -> String {
     let mut v: Vec<String> = Vec::new();
@@ -137,11 +146,29 @@ pub fn record_desc(p: &Project) -> String {
                         }
                     })
                     .collect();
+                let mut extra = String::new();
+                if !judge.is_empty() {
+                    extra += &format!("；建单时按问题判断：{}", judge.join("、"));
+                }
+                if judge_priority(m) {
+                    extra += &format!("；优先级规则：{}", one_line(m.priority_rule_or_default()));
+                }
+                let cands = m.candidates();
+                if !cands.is_empty() {
+                    let names: Vec<String> = cands
+                        .iter()
+                        .enumerate()
+                        .map(|(i, u)| if i == 0 && m.assignee.is_some() { format!("{}（默认）", u.name) } else { u.name.clone() })
+                        .collect();
+                    extra += &format!("；候选处理人：{}", names.join("、"));
+                    let rule = m.assign_rule.trim();
+                    extra += &if rule.is_empty() { "；都派给默认处理人".to_string() } else { format!("；分派规则：{}", one_line(rule)) };
+                }
                 format!(
                     "建飞书项目工单（{} · {}{}）",
                     if m.space_name.is_empty() { &m.project_key } else { &m.space_name },
                     if m.work_item_type_name.is_empty() { &m.work_item_type } else { &m.work_item_type_name },
-                    if judge.is_empty() { String::new() } else { format!("；建单时按问题判断：{}", judge.join("、")) }
+                    extra
                 )
             }
             None => "建飞书项目工单（但还没选空间，无法建）".to_string(),
@@ -324,7 +351,22 @@ mod tests {
             ],
             ..Default::default()
         }];
-        assert_eq!(record_desc(&p), "建飞书项目工单（AI 客服 · 缺陷；建单时按问题判断：优先级（P0/P1））");
+        let desc = record_desc(&p);
+        assert!(desc.starts_with("建飞书项目工单（AI 客服 · 缺陷；建单时按问题判断：优先级（P0/P1）；优先级规则：P0："), "{desc}");
+        assert!(!desc.contains('\n'), "规则压成一行");
+        {
+            let m = p.meegle.as_mut().unwrap();
+            m.priority_rule = "P0：全挂\nP1：部分挂".into();
+            m.assignee = Some(crate::store::config::MeegleUser { user_key: "u1".into(), name: "张三".into() });
+            m.assignees = vec![
+                crate::store::config::MeegleUser { user_key: "u1".into(), name: "张三".into() },
+                crate::store::config::MeegleUser { user_key: "u2".into(), name: "李四".into() },
+            ];
+        }
+        assert!(record_desc(&p).ends_with("优先级规则：P0：全挂 P1：部分挂；候选处理人：张三（默认）、李四；都派给默认处理人）"), "{}", record_desc(&p));
+        p.meegle.as_mut().unwrap().assign_rule = "前端给张三\nRPA 给李四".into();
+        assert!(record_desc(&p).ends_with("分派规则：前端给张三 RPA 给李四）"), "{}", record_desc(&p));
+        p.meegle.as_mut().unwrap().assign_rule = String::new();
         p.record.meegle = false;
         p.record.feishu_task = true;
         p.feishu_task = Some(crate::store::config::FeishuTaskTarget { assignee_name: "张三".into(), ..Default::default() });

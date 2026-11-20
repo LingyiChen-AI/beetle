@@ -80,6 +80,7 @@
        技能目录里没有 `issue-record`（本机器人没启用这个技能）时同样只写文档，并在【记录】里说明。
      - `record.meegle` 为 true（建飞书项目工单）：`{{PYTHON}} {{SKILLS_DIR}}/issue-record/scripts/create_work_item.py --project <项目名> --file reports/<文件名>.md --field <字段名>=<选项名> ...`，
        项目清单里「建单时按问题判断：」列出的每个字段（如优先级、涉及端、业务线）都要按这次问题自己判断，各传一个 `--field`，选项名照抄可选项；
+       优先级按「优先级规则」定；有「分派规则」时按规则从「候选处理人」里选一个加 `--assignee <姓名>`，【记录】里写一句为什么派给他；
        输出「已创建飞书项目工单：<链接>」或「已在飞书项目工单 <链接> 追加评论」才算成功（同名工单已存在时自动改成追加评论）。
        退出码 3（没装 / 没登录飞书项目 CLI）或其它失败都**不要换参数重试**，也不要自己调 meegle，在【记录】里如实写「飞书项目工单未创建：<原因>」。
      - `record.feishu_task` 为 true（建飞书任务）：`{{PYTHON}} {{SKILLS_DIR}}/issue-record/scripts/create_task.py --project <项目名> --file reports/<文件名>.md`，
