@@ -15,7 +15,7 @@ import {
 } from "../../api";
 import { isToday, relTime } from "../../format";
 import { Switch, useToast } from "../common";
-import { ChipMultiSelect, EmptyState, HelpTip } from "../ui";
+import { Checkbox, ChipMultiSelect, EmptyState, HelpTip, Modal } from "../ui";
 
 /** 「谁能触发」的选项文字（概览、向导、群 tab 共用）。 */
 export const TRIGGER_LABEL: Record<Trigger, string> = { owner: "仅机器人主人", all: "群内所有人" };
@@ -201,6 +201,12 @@ function GroupCard({
                 </span>
               ))}
               {group.projects.length === 0 && <span style={{ color: "var(--dim)", fontSize: 12 }}>用默认项目</span>}
+              {!isNew && (
+                <button type="button" className="chip chip-add tr" aria-label={`给 ${group.name} 添加项目`} onClick={() => setEditing(true)}>
+                  <Plus />
+                  添加
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -240,6 +246,111 @@ function GroupCard({
   );
 }
 
+/** 给机器人加项目：选项目 + 选加到哪些群（默认全部群），合并进各群已有的负责项目。 */
+function AddProjectsDialog({
+  botId,
+  groups,
+  projectNames,
+  onGoProjects,
+  onClose,
+  onDone,
+}: {
+  botId: string;
+  groups: Group[];
+  projectNames: string[];
+  onGoProjects: () => void;
+  onClose: () => void;
+  onDone: () => Promise<void>;
+}) {
+  const toast = useToast();
+  const [picked, setPicked] = useState<string[]>([]);
+  const [targets, setTargets] = useState<string[]>(groups.map((g) => g.chat_id));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      for (const g of groups.filter((x) => targets.includes(x.chat_id))) {
+        const merged = [...g.projects, ...picked.filter((p) => !g.projects.includes(p))];
+        if (merged.length !== g.projects.length) await saveGroup(botId, { ...g, projects: merged });
+      }
+      toast(`已把 ${picked.join("、")} 加到 ${targets.length} 个群`);
+      await onDone();
+    } catch (e) {
+      setError(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      ariaLabel="添加项目"
+      icon={FolderGit2}
+      title="给机器人添加项目"
+      subtitle="选中的项目会加进所选群的「负责项目」，机器人在这些群里查问题时会用到它们的代码和数据源"
+      width={560}
+      onClose={onClose}
+      closeDisabled={busy}
+      footer={
+        <>
+          <span className="flex-1" />
+          <button type="button" className="btn tr" disabled={busy} onClick={onClose}>
+            取消
+          </button>
+          <button type="button" className="btn btn-pri tr" disabled={busy || picked.length === 0 || targets.length === 0} onClick={() => void submit()}>
+            <Check />
+            {busy ? "保存中…" : "添加"}
+          </button>
+        </>
+      }
+    >
+      <div className="grid" style={{ gap: 14 }}>
+        <div>
+          <span className="lbl">项目（可多选）</span>
+          <ChipMultiSelect
+            ariaLabel="要添加的项目"
+            mono
+            options={projectNames}
+            value={picked}
+            onChange={setPicked}
+            empty={
+              <span className="flex items-center gap-2" style={{ color: "var(--dim)", fontSize: 12 }}>
+                还没有项目
+                <button type="button" className="lnk" onClick={onGoProjects}>
+                  去项目页添加
+                </button>
+              </span>
+            }
+          />
+        </div>
+        <div>
+          <span className="lbl">加到哪些群</span>
+          <div className="grid" style={{ gap: 6 }}>
+            {groups.map((g) => (
+              <Checkbox
+                key={g.chat_id}
+                variant="card"
+                checked={targets.includes(g.chat_id)}
+                onChange={() => setTargets((t) => (t.includes(g.chat_id) ? t.filter((x) => x !== g.chat_id) : [...t, g.chat_id]))}
+                label={g.name}
+                right={<span style={{ color: "var(--dim)", fontSize: 12 }}>{g.projects.length ? `已有 ${g.projects.join("、")}` : "用默认项目"}</span>}
+              />
+            ))}
+          </div>
+        </div>
+        {error && (
+          <div className="alert-err" role="alert">
+            {error}
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 export default function GroupsTab({
   view,
   runs,
@@ -256,6 +367,7 @@ export default function GroupsTab({
   const { bot } = view;
   const toast = useToast();
   const [adding, setAdding] = useState(false);
+  const [addingProjects, setAddingProjects] = useState(false);
   const projectNames = Object.keys(projects?.projects ?? {});
   const involved = projectNames.filter((n) => bot.groups.some((g) => g.projects.includes(n)));
 
@@ -271,6 +383,19 @@ export default function GroupsTab({
 
   return (
     <div className="scroll flex-1" style={{ padding: "18px 24px" }}>
+      {addingProjects && (
+        <AddProjectsDialog
+          botId={bot.id}
+          groups={bot.groups}
+          projectNames={projectNames}
+          onGoProjects={onGoProjects}
+          onClose={() => setAddingProjects(false)}
+          onDone={async () => {
+            setAddingProjects(false);
+            await onChanged();
+          }}
+        />
+      )}
       <div className="card flex items-center" style={{ padding: "12px 14px", gap: 12, marginBottom: 12 }}>
         <LogIn style={{ width: 18, height: 18, color: "var(--accent-text)" }} />
         <div className="flex-1">
@@ -319,13 +444,20 @@ export default function GroupsTab({
             <FolderGit2 />
             涉及的项目
           </h3>
-          <button type="button" className="btn btn-ghost btn-sm tr" onClick={onGoProjects}>
-            项目管理 <ChevronRight />
-          </button>
+          <div className="flex items-center gap-1">
+            <button type="button" className="btn btn-sm tr" disabled={bot.groups.length === 0} title={bot.groups.length === 0 ? "先添加群" : undefined} onClick={() => setAddingProjects(true)}>
+              <Plus />
+              添加项目
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm tr" onClick={onGoProjects}>
+              项目管理 <ChevronRight />
+            </button>
+          </div>
         </div>
         {involved.length === 0 ? (
-          <EmptyState compact icon={FolderGit2} title="群里还没有指定负责项目" desc="编辑群卡片可以选择负责的项目；不选时用默认项目" />
+          <EmptyState compact icon={FolderGit2} title="群里还没有指定负责项目" desc="点右上角「添加项目」，或在群卡片的「负责项目」里添加；不选时用默认项目" />
         ) : (
+          <div className="t-scroll">
           <table className="t">
             <thead>
               <tr>
@@ -333,6 +465,7 @@ export default function GroupsTab({
                 <th>仓库</th>
                 <th>分支规则</th>
                 <th>关联数据源</th>
+                <th>所在群</th>
               </tr>
             </thead>
             <tbody>
@@ -340,25 +473,45 @@ export default function GroupsTab({
                 const pr = projects!.projects[n];
                 return (
                   <tr key={n}>
-                    <td className="mono">{n}</td>
-                    <td className="mono" style={{ color: "var(--muted)" }}>
+                    <td className="mono nw" style={{ fontWeight: 600 }}>
+                      {n}
+                    </td>
+                    <td className="mono brk" style={{ color: "var(--muted)", fontSize: 12 }}>
                       {pr.repo}
                     </td>
-                    <td className="mono" style={{ color: "var(--muted)" }}>
+                    <td className="mono nw" style={{ color: "var(--muted)", fontSize: 12 }}>
                       {pr.branch_glob} 取最新
                     </td>
                     <td>
-                      {pr.dbs.map((d) => (
-                        <span key={d} className="chip c-blue mono" style={{ marginRight: 4 }}>
-                          {d}
-                        </span>
-                      ))}
+                      <div className="t-chips">
+                        {pr.dbs.length ? (
+                          pr.dbs.map((d) => (
+                            <span key={d} className="chip c-blue mono">
+                              {d}
+                            </span>
+                          ))
+                        ) : (
+                          <span style={{ color: "var(--dim)", fontSize: 12 }}>无</span>
+                        )}
+                      </div>
+                    </td>
+                    <td>
+                      <div className="t-chips">
+                        {bot.groups
+                          .filter((g) => g.projects.includes(n))
+                          .map((g) => (
+                            <span key={g.chat_id} className="chip c-mut">
+                              {g.name}
+                            </span>
+                          ))}
+                      </div>
                     </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

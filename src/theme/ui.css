@@ -228,3 +228,19 @@
 /* 数据源测试结果：单行标签，超长省略 */
 .ds-test { max-width: 100%; min-width: 0; flex: 0 1 auto; }
 .ds-test-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 扫码创建飞书应用：二维码区 */
+.qr-box { flex: none; padding: 8px; border-radius: 12px; background: var(--qr-bg); border: 1px solid var(--line); }
+.qr-placeholder { width: 168px; height: 168px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #64748b; font-size: 12px; }
+
+/* 表格：外层可横向滚动兜底（内容实在放不下时在卡片里滚，不撑出卡片）；
+   单元格默认可换行，数字 / 状态等短内容用 .nw 不换行，长串（仓库地址、路径）用 .brk 在任意位置断开，标签用 .t-chips 折行 */
+.t-scroll { width: 100%; max-width: 100%; overflow-x: auto; }
+table.t td.nw, table.t th.nw { white-space: nowrap; }
+table.t td.brk { overflow-wrap: anywhere; word-break: normal; min-width: 160px; }
+.t-chips { display: flex; flex-wrap: wrap; gap: 4px; min-width: 120px; }
+.card { min-width: 0; }
+
+/* 群卡片「负责项目」后的添加按钮：虚线小标签 */
+.chip-add { border: 1px dashed var(--border); background: transparent; color: var(--muted); cursor: pointer; }
+.chip-add:hover { border-color: var(--accent); color: var(--accent-text); }

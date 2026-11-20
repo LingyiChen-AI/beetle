@@ -177,6 +177,7 @@ export default function EnvPage({ env, checking, onRecheck }: { env: EnvItem[]; 
                 {g.label}
               </div>
               <div className="card">
+                <div className="t-scroll">
                 <table className="t">
                   <thead>
                     <tr>
@@ -195,7 +196,7 @@ export default function EnvPage({ env, checking, onRecheck }: { env: EnvItem[]; 
                       return (
                         <Fragment key={e.id}>
                           <tr data-testid={`env-row-${e.id}`} style={e.status === "error" ? { background: "color-mix(in srgb, var(--danger) 4%, transparent)" } : undefined}>
-                            <td style={{ fontWeight: 500 }}>
+                            <td className="nw" style={{ fontWeight: 500 }}>
                               <span className="flex items-center gap-2.5">
                                 {(() => {
                                   const Icon = envIcon(e.id);
@@ -207,7 +208,7 @@ export default function EnvPage({ env, checking, onRecheck }: { env: EnvItem[]; 
                             <td>
                               <EnvChip item={e} busy={busy} />
                             </td>
-                            <td className="mono" style={{ color: e.status === "error" && !e.version ? "var(--danger-fg)" : "var(--muted)" }}>
+                            <td className="mono nw" style={{ color: e.status === "error" && !e.version ? "var(--danger-fg)" : "var(--muted)" }}>
                               {e.version ?? (e.status === "error" ? "未找到" : "—")}
                             </td>
                             <td style={{ color: "var(--muted)", fontSize: 12, lineHeight: 1.5, whiteSpace: "normal" }}>
@@ -242,6 +243,7 @@ export default function EnvPage({ env, checking, onRecheck }: { env: EnvItem[]; 
                     })}
                   </tbody>
                 </table>
+                </div>
               </div>
             </Fragment>
           );

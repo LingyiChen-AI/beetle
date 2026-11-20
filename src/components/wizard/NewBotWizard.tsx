@@ -1,6 +1,6 @@
 // 新增机器人向导 4 步：① 飞书应用（扫码创建 / 手填）+ 名称 + 引擎 → ② 模板与技能 → ③ 绑定群 / 自动接入 / 谁能触发 → ④ 完成，可立即启动。
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ArrowLeft, ArrowRight, Bot as BotIcon, Check, CircleCheck, ExternalLink, Hash, Info, LoaderCircle, Play, Plus, Smartphone, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bot as BotIcon, Check, CircleCheck, Copy, ExternalLink, Hash, Info, LoaderCircle, Play, Plus, Smartphone, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   CODE_REVIEW_SKILLS,
@@ -25,7 +25,7 @@ import {
   type TriggerMode,
 } from "../../api";
 import { Switch } from "../common";
-import { ChipMultiSelect, Checkbox, EmptyState, HelpTip, Modal, Segmented } from "../ui";
+import { ChipMultiSelect, Checkbox, EmptyState, HelpTip, Modal, QrCode, Segmented } from "../ui";
 import { TRIGGER_MODES } from "../tabs/ConfigTab";
 import { AUTO_ONBOARD_DESC, defaultSlug, OWNER_HINT, TRIGGER_LABEL } from "../tabs/GroupsTab";
 import { templateName } from "../tabs/OverviewTab";
@@ -101,6 +101,7 @@ export default function NewBotWizard({
   const [created, setCreated] = useState<Bot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     listTemplates().then(setTemplates).catch(() => {});
@@ -128,6 +129,7 @@ export default function NewBotWizard({
     const id = crypto.randomUUID();
     setScanning(id);
     setScanUrl(null);
+    setCopied(false);
     try {
       const app = await createFeishuApp(id, setScanUrl);
       setForm((f) => ({ ...f, app_id: app.appId, name: f.name || app.botName || "" }));
@@ -218,27 +220,53 @@ export default function NewBotWizard({
                 已创建 · App ID <span className="mono">{form.app_id}</span>
               </div>
             ) : scanning ? (
-              <div className="grid" style={{ gap: 8 }}>
-                <div className="flex items-center gap-2" style={{ color: "var(--muted)", fontSize: 12 }}>
-                  <LoaderCircle className="spin" style={{ width: 14, height: 14 }} />
-                  等待在飞书里确认创建…
-                </div>
-                <div className="flex gap-2">
-                  {scanUrl && (
-                    <button type="button" className="btn btn-sm tr" onClick={() => void openUrl(scanUrl)}>
-                      <ExternalLink />
-                      在浏览器打开授权页
-                    </button>
+              <div className="flex items-start" style={{ gap: 16 }} data-testid="scan-pending">
+                <div className="qr-box">
+                  {scanUrl ? (
+                    <QrCode text={scanUrl} size={168} label="飞书授权二维码" />
+                  ) : (
+                    <div className="qr-placeholder">
+                      <LoaderCircle className="spin" style={{ width: 18, height: 18 }} />
+                      正在生成二维码…
+                    </div>
                   )}
-                  <button type="button" className="btn btn-ghost btn-sm tr" onClick={() => void cancelCreateFeishuApp(scanning)}>
-                    取消创建
-                  </button>
                 </div>
-                {scanUrl && (
-                  <div className="mono break-all" style={{ fontSize: 11, color: "var(--dim)" }}>
-                    {scanUrl}
+                <div className="grid min-w-0 flex-1" style={{ gap: 10, alignContent: "start" }}>
+                  <div style={{ fontWeight: 600 }}>打开飞书 App，扫一扫左侧二维码</div>
+                  <div style={{ color: "var(--muted)", fontSize: 12, lineHeight: 1.7 }}>
+                    在手机上确认创建后，这里会自动继续。用不了手机时，也可以在电脑浏览器里打开授权页完成。
                   </div>
-                )}
+                  <div className="flex items-center gap-2" style={{ color: "var(--muted)", fontSize: 12 }}>
+                    <LoaderCircle className="spin" style={{ width: 14, height: 14 }} />
+                    等待确认…
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {scanUrl && (
+                      <>
+                        <button type="button" className="btn btn-sm tr" onClick={() => void openUrl(scanUrl)}>
+                          <ExternalLink />
+                          在浏览器打开
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm tr"
+                          onClick={() => {
+                            void navigator.clipboard
+                              ?.writeText(scanUrl)
+                              .then(() => setCopied(true))
+                              .catch(() => {});
+                          }}
+                        >
+                          <Copy />
+                          {copied ? "已复制" : "复制链接"}
+                        </button>
+                      </>
+                    )}
+                    <button type="button" className="btn btn-ghost btn-sm tr" onClick={() => void cancelCreateFeishuApp(scanning)}>
+                      取消创建
+                    </button>
+                  </div>
+                </div>
               </div>
             ) : (
               <button type="button" className="btn btn-pri tr" onClick={() => void scan()}>

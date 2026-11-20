@@ -225,6 +225,7 @@ function Charts({ s, range, showBots }: { s: StatsOverview; range: StatsRange; s
               机器人明细
             </h3>
           </div>
+          <div className="t-scroll">
           <table className="t">
             <thead>
               <tr>
@@ -241,22 +242,23 @@ function Charts({ s, range, showBots }: { s: StatsOverview; range: StatsRange; s
                   <td style={{ maxWidth: 180 }}>
                     <Truncate text={b.name} style={{ fontWeight: 500 }} />
                   </td>
-                  <td className="mono" style={{ textAlign: "right" }}>
+                  <td className="mono nw" style={{ textAlign: "right" }}>
                     {b.runs}
                   </td>
-                  <td className="mono" style={{ textAlign: "right", color: b.success_rate >= 0.8 ? "var(--success-fg)" : b.success_rate < 0.5 ? "var(--danger-fg)" : undefined }}>
+                  <td className="mono nw" style={{ textAlign: "right", color: b.success_rate >= 0.8 ? "var(--success-fg)" : b.success_rate < 0.5 ? "var(--danger-fg)" : undefined }}>
                     {pct(b.success_rate)}
                   </td>
-                  <td className="mono" style={{ textAlign: "right", color: "var(--muted)" }}>
+                  <td className="mono nw" style={{ textAlign: "right", color: "var(--muted)" }}>
                     {b.replied ? fmtDur(b.avg_duration_ms) : "—"}
                   </td>
-                  <td className="mono" style={{ textAlign: "right", color: "var(--muted)" }}>
+                  <td className="mono nw" style={{ textAlign: "right", color: "var(--muted)" }}>
                     {b.sql_count}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
     </>

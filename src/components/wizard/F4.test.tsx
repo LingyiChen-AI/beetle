@@ -157,6 +157,31 @@ describe("新增机器人向导", () => {
     expect(typeof attempt).toBe("string");
   });
 
+  test("扫码创建：等待确认时显示授权链接的二维码，可复制链接", async () => {
+    let finish: (v: unknown) => void = () => {};
+    setHandlers(
+      wizardHandlers({
+        feishu_create_app: (a: Record<string, unknown>) => {
+          (a.onUrl as { onmessage: (u: string) => void }).onmessage("https://open.feishu.cn/page/cli?user_code=ABCD-1234");
+          return new Promise((r) => (finish = r));
+        },
+      }),
+    );
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    render(<NewBotWizard onClose={() => {}} onCreated={() => {}} />);
+    await userEvent.click(screen.getByRole("button", { name: "开始扫码创建" }));
+    const qr = await screen.findByRole("img", { name: "飞书授权二维码" });
+    expect(qr.querySelector("path")?.getAttribute("d")?.length).toBeGreaterThan(100);
+    // 长链接不再直接铺在界面上
+    expect(screen.queryByText(/user_code=ABCD-1234/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "复制链接" }));
+    expect(writeText).toHaveBeenCalledWith("https://open.feishu.cn/page/cli?user_code=ABCD-1234");
+    expect(await screen.findByRole("button", { name: "已复制" })).toBeInTheDocument();
+    finish({ appId: "cli_q", botName: "" });
+    expect(await screen.findByTestId("scan-done")).toHaveTextContent("cli_q");
+  });
+
   test("扫码失败显示中文原因", async () => {
     setHandlers(wizardHandlers({ feishu_create_app: () => Promise.reject("create_timeout") }));
     render(<NewBotWizard onClose={() => {}} onCreated={() => {}} />);

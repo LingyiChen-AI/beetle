@@ -3,4 +3,5 @@ export { Select, type SelectOption, type SelectProps } from "./Select";
 export { ChipMultiSelect, Checkbox, Segmented, ToggleChip, type ChipOption, type SegOption } from "./Toggle";
 export { NumberInput, TextInput } from "./Inputs";
 export { Modal } from "./Modal";
+export { default as QrCode } from "./QrCode";
 export { EmptyState, HelpTip, LoadingState, Tooltip, Truncate } from "./Feedback";

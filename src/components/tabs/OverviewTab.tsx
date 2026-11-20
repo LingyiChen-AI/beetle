@@ -135,6 +135,7 @@ export default function OverviewTab({
           {bot.groups.length === 0 ? (
             <EmptyState compact icon={Users} title="还没有群" desc="把机器人拉进飞书群并 @ 它即可自动接入" />
           ) : (
+            <div className="t-scroll">
             <table className="t">
               <thead>
                 <tr>
@@ -150,19 +151,21 @@ export default function OverviewTab({
                   const s = perGroup(g.chat_id);
                   return (
                     <tr key={g.chat_id}>
-                      <td style={{ fontWeight: 500 }}>{g.name}</td>
+                      <td style={{ fontWeight: 500, minWidth: 120 }}>{g.name}</td>
                       <td>
-                        {g.projects.map((pr) => (
-                          <span key={pr} className="chip c-mut mono" style={{ marginRight: 4 }}>
-                            {pr}
-                          </span>
-                        ))}
+                        <div className="t-chips">
+                          {g.projects.map((pr) => (
+                            <span key={pr} className="chip c-mut mono">
+                              {pr}
+                            </span>
+                          ))}
+                        </div>
                       </td>
-                      <td style={{ color: "var(--muted)" }}>{TRIGGER_LABEL[g.trigger]}</td>
-                      <td className="mono" style={{ textAlign: "right", color: s.today ? undefined : "var(--dim)" }}>
+                      <td className="nw" style={{ color: "var(--muted)" }}>{TRIGGER_LABEL[g.trigger]}</td>
+                      <td className="mono nw" style={{ textAlign: "right", color: s.today ? undefined : "var(--dim)" }}>
                         {s.today}
                       </td>
-                      <td className="mono" style={{ color: "var(--muted)" }}>
+                      <td className="mono nw" style={{ color: "var(--muted)" }}>
                         {s.last}
                       </td>
                     </tr>
@@ -170,6 +173,7 @@ export default function OverviewTab({
                 })}
               </tbody>
             </table>
+            </div>
           )}
         </div>
         <div className="card">

@@ -260,6 +260,32 @@ describe("工作台 tab", () => {
     expect(screen.getByLabelText("App Secret")).toHaveValue("");
   });
 
+  test("群：「添加项目」选项目后合并进所选群的负责项目", async () => {
+    const proj = (repo: string) => ({ repo, branch_glob: "release/*", rules_file: "", description: "", dbs: [] });
+    setHandlers(
+      baseHandlers({
+        list_projects: { projects: { demo: proj("r1"), "jev-rpa": proj("r2") }, dbs: {}, default_projects: [] },
+        save_group: undefined,
+      }),
+    );
+    render(<App />);
+    await userEvent.click(await screen.findByRole("tab", { name: /群/ }));
+    await userEvent.click(screen.getByRole("button", { name: "添加项目" }));
+    const dialog = screen.getByRole("dialog", { name: "添加项目" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "jev-rpa" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "添加" }));
+    await waitFor(() => expect(callsOf("save_group")).toHaveLength(1));
+    expect(callsOf("save_group")[0]).toMatchObject({ botId: "b1", group: { chat_id: "oc_1", projects: ["demo", "jev-rpa"] } });
+  });
+
+  test("群：群卡片「负责项目」后面有「添加」，点了进入编辑", async () => {
+    setHandlers(baseHandlers());
+    render(<App />);
+    await userEvent.click(await screen.findByRole("tab", { name: /群/ }));
+    await userEvent.click(screen.getByRole("button", { name: "给 运营群 添加项目" }));
+    expect(screen.getByRole("group", { name: "负责项目" }) ?? screen.getByLabelText("负责项目")).toBeInTheDocument();
+  });
+
   test("设置：运行中的机器人保存后，提示里有「立即重启」，点了先停再启", async () => {
     setHandlers(
       baseHandlers({
