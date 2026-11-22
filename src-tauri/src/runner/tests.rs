@@ -44,6 +44,7 @@ fn input(engine: Engine) -> RunInput {
         projects: vec![],
         doc_url: None,
         trigger: Trigger::All,
+        all_projects: false,
     };
     let ctx = PromptContext {
         chat_id: "oc_abc".into(),

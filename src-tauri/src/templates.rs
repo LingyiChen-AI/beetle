@@ -82,13 +82,16 @@ pub fn load(name: &str) -> Result<String, String> {
         .ok_or_else(|| format!("找不到模板：{name}"))
 }
 
-/// 本群负责的项目清单，每个项目三行（说明与仓库、关联数据源、记录方式）；群里登记了但配置里没有的项目跳过。
+/// 可查的项目清单（见 `Group::scope`），每个项目三行（说明与仓库、关联数据源、记录方式）；群里登记了但配置里没有的项目跳过。
 pub fn projects_block(group: &Group, projects: &BTreeMap<String, Project>) -> String {
-    group
-        .projects
-        .iter()
-        .filter_map(|name| projects.get(name).map(|p| (name, p)))
-        .map(|(name, p)| {
+    let scope = group.scope(projects);
+    if scope.is_empty() {
+        return "（还没有可查的项目：请在客户端「项目」页添加项目，或在群设置里关联项目）".to_string();
+    }
+    let list = scope
+        .into_iter()
+        .map(|(name, p, preferred)| {
+            let tag = if group.all_projects && preferred { "【本群常用】" } else { "" };
             let dbs = if p.dbs.is_empty() {
                 "无".to_string()
             } else {
@@ -99,7 +102,7 @@ pub fn projects_block(group: &Group, projects: &BTreeMap<String, Project>) -> St
                     .join(", ")
             };
             format!(
-                "- `{name}`：{}（仓库 {}，分支 `{}` 取最新）
+                "- `{name}`{tag}：{}（仓库 {}，分支 `{}` 取最新）
   数据源：{dbs}
   记录方式：{}",
                 p.description,
@@ -110,8 +113,19 @@ pub fn projects_block(group: &Group, projects: &BTreeMap<String, Project>) -> St
         })
         .collect::<Vec<_>>()
         .join("
-")
+");
+    if group.all_projects {
+        format!("{AUTO_LOCATE_HINT}\n\n{list}")
+    } else {
+        list
+    }
 }
+
+/// 开了「全部项目」（含私聊）时写在项目清单前面：让 AI 自己定位项目。
+pub const AUTO_LOCATE_HINT: &str = "下面是机器人可查的全部项目，标【本群常用】的优先考虑。\
+先根据问题里的项目名、产品 / 功能名、页面、接口、表名、报错等线索判断属于哪个项目（一个问题可能涉及多个项目）；\
+线索不够时选最可能的项目去查，并在回复里写明「按 X 项目查的」。不要因为某个项目不在本群常用里就拒绝或让人去改配置；\
+只有清单里完全没有相关项目时，才说明需要在客户端添加哪个项目。查库、建 issue / 工单 / 任务、写文档都按定位到的项目的配置做。";
 
 fn one_line(s: &str) -> String {
     s.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" ")
@@ -226,6 +240,7 @@ mod tests {
             projects: projects.iter().map(|s| s.to_string()).collect(),
             doc_url: None,
             trigger: Trigger::Owner,
+            all_projects: false,
         }
     }
 
@@ -322,6 +337,29 @@ mod tests {
             "- `demo`：示例服务（仓库 git@x:a/b.git，分支 `release/*` 取最新）\n  数据源：`demo_config`, `demo_test`\n  记录方式：写飞书文档\n\
              - `rpa`：自动化（仓库 git@x:a/b.git，分支 `release/*` 取最新）\n  数据源：`demo_test`, `demo_worker`\n  记录方式：写飞书文档"
         );
+    }
+
+    #[test]
+    fn projects_block_all_projects_puts_preferred_first_with_hint() {
+        let mut projects = BTreeMap::new();
+        projects.insert("demo".to_string(), project("示例服务", &["demo_config"]));
+        projects.insert("rpa".to_string(), project("自动化", &["demo_worker"]));
+        projects.insert("web".to_string(), project("官网", &[]));
+        let mut g = group(&["rpa", "gone"]);
+        g.all_projects = true;
+        let block = projects_block(&g, &projects);
+        assert!(block.starts_with(AUTO_LOCATE_HINT), "开了全部项目时先写定位说明");
+        let rpa = block.find("- `rpa`【本群常用】：自动化").expect("常用项目带标记");
+        let demo = block.find("- `demo`：示例服务").expect("其余项目也列出来，不带标记");
+        let web = block.find("- `web`：官网").unwrap();
+        assert!(rpa < demo && demo < web, "常用项目在前，其余按名称");
+        assert!(!block.contains("gone"), "配置里已删除的项目跳过");
+    }
+
+    #[test]
+    fn projects_block_empty_scope_says_so() {
+        let block = projects_block(&group(&[]), &BTreeMap::new());
+        assert!(block.contains("还没有可查的项目"));
     }
 
     #[test]

@@ -184,14 +184,19 @@ fn deny_section(deny: &[String]) -> String {
 }
 
 /// 运行时配置：技能脚本通过环境变量 `BEETLE_RUNTIME`（兼容旧名 `BUG_PATROL_RUNTIME`）读取。字段见 `_shared/bp_common.py`。
-/// `dbs` 只含本群项目关联的数据源（数组，见 `runtime_dbs`）；每个项目的 `dbs` 也展开成同样的对象数组。
+/// `projects` / `dbs` 按本次可查的项目（`Group::scope`）生成：本群常用项目在前，开了「全部项目」时含全部项目；
+/// `dbs` 是这些项目关联的数据源（数组，见 `runtime_dbs`），每个项目的 `dbs` 也展开成同样的对象数组。
+/// `preferred_projects` 是本群常用项目，`all_projects` 表示由 AI 按问题自行定位项目。
 fn runtime_value(cfg: &AppConfig, group: &Group, trigger: &TriggerInfo) -> Value {
     let mut projects = serde_json::Map::new();
     let mut aliases: Vec<&String> = Vec::new();
-    for name in &group.projects {
-        let Some(p) = cfg.projects.get(name) else { continue };
+    let mut preferred: Vec<&String> = Vec::new();
+    for (name, p, is_preferred) in group.scope(&cfg.projects) {
         projects.insert(name.clone(), p.runtime_value(&cfg.dbs));
         aliases.extend(p.dbs.iter());
+        if is_preferred {
+            preferred.push(name);
+        }
     }
     let dbs = runtime_dbs(cfg, aliases);
     json!({
@@ -202,6 +207,8 @@ fn runtime_value(cfg: &AppConfig, group: &Group, trigger: &TriggerInfo) -> Value
         "code_root": fwd(&cfg.code_cache_dir()),
         "review_state_dir": fwd(&crate::review_card::state_root()),
         "projects": projects,
+        "preferred_projects": preferred,
+        "all_projects": group.all_projects,
         "dbs": dbs,
         "trigger_message_id": trigger.message_id,
         "trigger_sender_open_id": trigger.sender_open_id,
@@ -331,6 +338,7 @@ mod tests {
             projects: vec!["demo".into()],
             doc_url: Some("https://x.feishu.cn/docx/abc".into()),
             trigger: Trigger::Owner,
+            all_projects: false,
         };
         let bot = Bot::new_default("b1", "机器人", "cli_x");
         let interp = Interpreters { python: PathBuf::from("C:\\Py\\python.exe"), node: PathBuf::from("node") };
@@ -519,6 +527,30 @@ mod tests {
         assert_eq!(dbs[1]["access"], "skill");
         assert_eq!(dbs[1]["skill"], "my-sql-skill");
         assert_eq!(dbs[1]["database"], "other_db");
+    }
+
+    /// 开了「全部项目」：运行时含全部项目和它们的库，常用项目列在 preferred_projects；CLAUDE.md 带定位说明。
+    #[test]
+    fn all_projects_scope_in_runtime_and_rules() {
+        let _h = test_home();
+        let (cfg, bot, mut group, interp, trig) = fixture();
+        let rt_of = |g: &Group| -> Value {
+            let ws = prepare(&cfg, &bot, g, &interp, &trig).unwrap();
+            serde_json::from_str(&read(&ws.runtime_json)).unwrap()
+        };
+        let rt = rt_of(&group);
+        assert_eq!(rt["projects"].as_object().unwrap().keys().collect::<Vec<_>>(), ["demo"]);
+        assert_eq!((rt["all_projects"].clone(), rt["preferred_projects"].clone()), (json!(false), json!(["demo"])));
+
+        group.all_projects = true;
+        let rt = rt_of(&group);
+        assert_eq!(rt["projects"].as_object().unwrap().keys().collect::<Vec<_>>(), ["demo", "other"]);
+        let aliases: Vec<&str> = rt["dbs"].as_array().unwrap().iter().map(|d| d["alias"].as_str().unwrap()).collect();
+        assert_eq!(aliases, ["demo_config", "other_db"]);
+        assert_eq!((rt["all_projects"].clone(), rt["preferred_projects"].clone()), (json!(true), json!(["demo"])));
+        let dir = paths::workspaces_dir().join(&bot.id).join(&group.slug);
+        let md = read(&dir.join("CLAUDE.md"));
+        assert!(md.contains(crate::templates::AUTO_LOCATE_HINT) && md.contains("`demo`【本群常用】") && md.contains("`other`："));
     }
 
     /// 技能文档里的 `{{BEETLE_EXE}}` 渲染成客户端可执行文件的绝对路径（正斜杠）。

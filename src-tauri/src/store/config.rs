@@ -48,9 +48,36 @@ pub struct Group {
     pub chat_id: String,
     pub name: String,
     pub slug: String,
+    /// 本群常用项目；开了 `all_projects` 时只是优先参考。
     pub projects: Vec<String>,
     pub doc_url: Option<String>,
     pub trigger: Trigger,
+    /// 全部项目都可查，由 AI 按问题自行定位项目（`projects` 排在前面优先考虑）。私聊固定开启。
+    #[serde(default)]
+    pub all_projects: bool,
+}
+
+impl Group {
+    /// 本次运行可见的项目：`(项目名, 项目, 是否本群常用)`。常用项目按勾选顺序在前；
+    /// 开了 `all_projects` 时再按名称补上其余项目。配置里已不存在的项目名跳过。
+    pub fn scope<'a>(&'a self, all: &'a BTreeMap<String, Project>) -> Vec<(&'a String, &'a Project, bool)> {
+        let mut out: Vec<(&String, &Project, bool)> = Vec::new();
+        for name in &self.projects {
+            if let Some((k, p)) = all.get_key_value(name) {
+                if !out.iter().any(|(n, _, _)| *n == k) {
+                    out.push((k, p, true));
+                }
+            }
+        }
+        if self.all_projects {
+            for (k, p) in all {
+                if !out.iter().any(|(n, _, _)| *n == k) {
+                    out.push((k, p, false));
+                }
+            }
+        }
+        out
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -519,6 +546,23 @@ pub fn update<F: FnOnce(&mut AppConfig) -> Result<(), String>>(f: F) -> Result<A
 mod tests {
     use super::*;
     use crate::test_support::test_home;
+
+    #[test]
+    fn group_scope_preferred_first_and_all_projects_adds_rest() {
+        let mut all = BTreeMap::new();
+        for n in ["a", "b", "c"] {
+            all.insert(n.to_string(), Project::new("git@x:a/b.git", "release/*", "AGENTS.md", n, vec![]));
+        }
+        let mut g: Group = serde_json::from_value(serde_json::json!({
+            "chat_id": "oc_x", "name": "群", "slug": "s", "projects": ["c", "gone", "c"], "doc_url": null, "trigger": "all"
+        }))
+        .unwrap();
+        assert!(!g.all_projects, "旧配置没有这个字段 = 只看本群项目");
+        let names = |g: &Group| g.scope(&all).iter().map(|(n, _, pre)| format!("{n}{}", if *pre { "*" } else { "" })).collect::<Vec<_>>();
+        assert_eq!(names(&g), ["c*"], "只看本群项目，去重并跳过已删除的");
+        g.all_projects = true;
+        assert_eq!(names(&g), ["c*", "a", "b"], "全部项目：常用在前，其余按名称");
+    }
 
     #[test]
     fn save_then_load_roundtrips_and_has_no_secret_field() {

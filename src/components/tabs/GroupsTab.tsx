@@ -172,9 +172,12 @@ function GroupCard({
         <div>
           <span className="lbl flex items-center gap-1.5">
             负责项目{editing ? "（可多选）" : ""}
-            {editing && <HelpTip text="机器人在这个群里查问题时用哪些项目的代码和库；不选时用默认项目" label="负责项目" />}
+            {editing && (
+              <HelpTip text="机器人在这个群里查问题时用哪些项目的代码和库。勾上「全部项目」后，这里选的项目优先，问到别的项目时由 AI 自行定位" label="负责项目" />
+            )}
           </span>
           {editing ? (
+            <>
             <ChipMultiSelect
               ariaLabel="负责项目"
               mono
@@ -192,15 +195,28 @@ function GroupCard({
                 </span>
               }
             />
+            <Checkbox
+              className="mt-2"
+              checked={!!g.all_projects}
+              onChange={(v) => setG((x) => ({ ...x, all_projects: v }))}
+              label="全部项目，AI 自行定位"
+              description="问到没关联的项目也能查，上面选的项目优先"
+            />
+            </>
           ) : (
             <div className="flex flex-wrap gap-1.5">
+              {group.all_projects && (
+                <span className="chip c-blue" title="全部项目都可查，由 AI 按问题自行定位项目">
+                  AI 定位全部项目
+                </span>
+              )}
               {group.projects.map((name) => (
                 <span key={name} className="chip c-mut">
                   <FolderGit2 />
                   <span className="mono">{name}</span>
                 </span>
               ))}
-              {group.projects.length === 0 && <span style={{ color: "var(--dim)", fontSize: 12 }}>用默认项目</span>}
+              {group.projects.length === 0 && !group.all_projects && <span style={{ color: "var(--dim)", fontSize: 12 }}>还没有关联项目</span>}
               {!isNew && (
                 <button type="button" className="chip chip-add tr" aria-label={`给 ${group.name} 添加项目`} onClick={() => setEditing(true)}>
                   <Plus />
@@ -417,7 +433,7 @@ export default function GroupsTab({
           <GroupCard
             botId={bot.id}
             isNew
-            group={{ chat_id: "", name: "", slug: "", projects: [], doc_url: null, trigger: "owner" }}
+            group={{ chat_id: "", name: "", slug: "", projects: [], doc_url: null, trigger: "owner", all_projects: false }}
             runs={[]}
             projectNames={projectNames}
             onGoProjects={onGoProjects}

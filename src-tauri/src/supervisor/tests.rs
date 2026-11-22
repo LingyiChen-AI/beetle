@@ -203,6 +203,7 @@ fn group(chat: &str, trigger: Trigger) -> Group {
         projects: vec![],
         doc_url: None,
         trigger,
+        all_projects: false,
     }
 }
 

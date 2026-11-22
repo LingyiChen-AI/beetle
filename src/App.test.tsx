@@ -238,6 +238,18 @@ describe("工作台 tab", () => {
     expect(callsOf("remove_group")).toEqual([{ botId: "b1", chatId: "oc_1" }]);
   });
 
+  test("群：编辑时勾「全部项目，AI 自行定位」随 save_group 保存", async () => {
+    setHandlers(baseHandlers({ save_group: undefined }));
+    render(<App />);
+    await userEvent.click(await screen.findByRole("tab", { name: /群/ }));
+    const card = await screen.findByTestId("group-oc_1");
+    await userEvent.click(within(card).getByRole("button", { name: "编辑" }));
+    await userEvent.click(within(card).getByRole("checkbox", { name: /全部项目，AI 自行定位/ }));
+    await userEvent.click(within(card).getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(callsOf("save_group")).toHaveLength(1));
+    expect(callsOf("save_group")[0]).toMatchObject({ botId: "b1", group: { chat_id: "oc_1", all_projects: true } });
+  });
+
   test("群：自动接入开关经 save_bot 保存", async () => {
     setHandlers(baseHandlers({ save_bot: (a: Record<string, unknown>) => a.bot }));
     render(<App />);

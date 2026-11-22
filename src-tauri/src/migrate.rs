@@ -175,6 +175,7 @@ fn read_legacy(files: &LegacyFiles) -> Result<Option<Legacy>, String> {
                 projects: ps,
                 doc_url: str_of(v, "doc_url").map(str::to_string),
                 trigger: Trigger::All,
+                all_projects: false,
             });
         }
     }
@@ -188,6 +189,7 @@ fn read_legacy(files: &LegacyFiles) -> Result<Option<Legacy>, String> {
                 doc_url: None,
                 trigger: Trigger::All,
                 chat_id,
+                all_projects: false,
             });
         }
     }

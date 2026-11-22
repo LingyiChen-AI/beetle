@@ -14,6 +14,7 @@ fn group(chat_id: &str, projects: &[&str]) -> Group {
         projects: projects.iter().map(|s| s.to_string()).collect(),
         doc_url: None,
         trigger: Trigger::Owner,
+        all_projects: false,
     }
 }
 

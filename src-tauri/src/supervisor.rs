@@ -268,7 +268,7 @@ fn find_bot(cfg: &AppConfig, bot_id: &str) -> Option<Bot> {
     cfg.bots.iter().find(|b| b.id == bot_id).cloned()
 }
 
-/// 主人私聊自测用的虚拟群：不登记进配置，不建文档。
+/// 主人私聊用的虚拟群：不登记进配置，不建文档；全部项目可查，默认项目优先，由 AI 按问题定位项目。
 fn p2p_group(cfg: &AppConfig, chat_id: &str) -> Group {
     Group {
         chat_id: chat_id.to_string(),
@@ -277,6 +277,7 @@ fn p2p_group(cfg: &AppConfig, chat_id: &str) -> Group {
         projects: cfg.default_projects.clone(),
         doc_url: None,
         trigger: Trigger::Owner,
+        all_projects: true,
     }
 }
 

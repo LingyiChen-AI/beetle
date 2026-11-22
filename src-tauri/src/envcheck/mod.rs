@@ -280,16 +280,19 @@ pub fn required_ids(bot: &Bot, skills: &[SkillInfo]) -> Vec<&'static str> {
     ALL_IDS.iter().copied().filter(|id| need.contains(id)).collect()
 }
 
-/// 机器人会建飞书项目工单：启用了 issue-record，且它的群关联的项目（没关联时看默认项目）里有勾「建飞书项目工单」的。
+/// 机器人会建飞书项目工单：启用了 issue-record，且它能查到的项目里有勾「建飞书项目工单」的。
+/// 能查到的项目 = 各群关联的项目；有群开了「全部项目」或没有群时（私聊可查全部项目），看全部项目。
 pub fn needs_meegle(bot: &Bot, cfg: &config::AppConfig) -> bool {
     if !bot.skills.iter().any(|s| s == "issue-record") {
         return false;
     }
-    let mut names: Vec<&String> = bot.groups.iter().flat_map(|g| g.projects.iter()).collect();
-    if names.is_empty() {
-        names = cfg.default_projects.iter().collect();
+    if bot.groups.is_empty() || bot.groups.iter().any(|g| g.all_projects) {
+        return cfg.projects.values().any(|p| p.record.meegle);
     }
-    names.iter().any(|n| cfg.projects.get(*n).is_some_and(|p| p.record.meegle))
+    bot.groups
+        .iter()
+        .flat_map(|g| g.scope(&cfg.projects))
+        .any(|(_, p, _)| p.record.meegle)
 }
 
 /// `required_ids` 再加上配置决定的项（建飞书项目工单 → meegle CLI 与登录）。

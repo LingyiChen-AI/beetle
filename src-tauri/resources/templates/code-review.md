@@ -7,7 +7,7 @@
 这是**无人值守的自动任务**：没有人会回答你的问题，也不要等确认。不要调用 superpowers 之类的流程类 skill
 （brainstorming、writing-plans 等），不要用 ego-browser，也不要调用别的代码审查插件，直接按下面的流程做。
 
-## 本群负责的项目
+## 可查的项目
 
 {{PROJECTS_BLOCK}}
 

@@ -44,9 +44,12 @@ export interface Group {
   chat_id: string;
   name: string;
   slug: string;
+  /** 本群常用项目；开了 all_projects 时只是优先参考 */
   projects: string[];
   doc_url: string | null;
   trigger: Trigger;
+  /** 全部项目都可查，由 AI 按问题自行定位项目（旧配置没有这个字段 = false） */
+  all_projects?: boolean;
 }
 
 export interface Bot {

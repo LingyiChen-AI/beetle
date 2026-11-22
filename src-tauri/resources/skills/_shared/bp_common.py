@@ -1,7 +1,8 @@
 """Beetle 内置技能公共函数：读运行时配置、以用户身份调 lark-cli。
 
 运行时配置文件路径由环境变量 BEETLE_RUNTIME 给出（旧名 BUG_PATROL_RUNTIME 也认，客户端两个都设），客户端每次运行前按群生成。
-字段：chat_id、group_name、doc_url、owner_open_id、code_root、projects、dbs（项目关联的数据源，对象数组），
+字段：chat_id、group_name、doc_url、owner_open_id、code_root、projects（本次可查的项目）、dbs（这些项目关联的数据源，对象数组）、
+preferred_projects（本群常用项目）、all_projects（true = 全部项目可查，由 AI 按问题定位项目；私聊固定为 true），
 以及本次触发的 trigger_message_id、trigger_sender_open_id（机器人应用的 open_id，和 owner_open_id 不可比，只作记录）、
 trigger_is_owner（客户端按 union_id 判定的「触发人是机器人主人」，p2p_context 要求为 true）。
 owner_open_id 是 lark-cli 应用下的 open_id，只能和 lark-cli 读回的 id 比较。

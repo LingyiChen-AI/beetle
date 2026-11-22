@@ -53,6 +53,7 @@ pub fn register_group(bot_id: &str, chat_id: &str, lark: &dyn LarkOps) -> Result
         projects: current.default_projects.clone(),
         doc_url,
         trigger: Trigger::Owner,
+        all_projects: false,
     };
     let mut registered: Option<Group> = None;
     let cfg = config::update(|cfg| {
@@ -192,6 +193,7 @@ mod tests {
                         projects: vec![],
                         doc_url: None,
                         trigger: Trigger::All,
+                        all_projects: false,
                     });
                     Ok(())
                 })

@@ -230,6 +230,7 @@ mod tests {
             projects: vec![],
             doc_url: None,
             trigger,
+            all_projects: false,
         }
     }
 

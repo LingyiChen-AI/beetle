@@ -441,7 +441,7 @@ export default function ProjectsPage({ onGoDataSources = hashGoDataSources }: { 
                   type="button"
                   className={`chip tr ${isDefault ? "c-ok" : "c-mut"}`}
                   aria-pressed={isDefault}
-                  title="自动接入的新群、主人私聊自测会带上默认项目"
+                  title="自动接入的新群会关联默认项目；私聊可查全部项目，默认项目优先"
                   onClick={() => toggleDefault(n)}
                 >
                   <Star />
