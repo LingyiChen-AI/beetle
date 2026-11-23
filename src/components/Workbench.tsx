@@ -30,6 +30,7 @@ import {
 } from "../api";
 import { hm, isToday } from "../format";
 import { upsertRun } from "../runs/merge";
+import { useDayStart } from "../hooks/useDayStart";
 import { avatarOf, BotIcon, engineText } from "./BotList";
 import { BotChip, Switch, type BotKind } from "./common";
 import ConfigTab from "./tabs/ConfigTab";
@@ -92,7 +93,8 @@ export default function Workbench(p: WorkbenchProps) {
     listSkills().then(setSkills).catch(() => {});
   }, []);
 
-  const todayRuns = useMemo(() => runs.filter((r) => isToday(r.started_at)), [runs]);
+  const dayStart = useDayStart();
+  const todayRuns = useMemo(() => runs.filter((r) => isToday(r.started_at, dayStart)), [runs, dayStart]);
   const av = avatarOf(p.index, bot);
   const blocked = p.envErrors.length > 0;
   const running = p.kind === "running";

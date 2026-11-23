@@ -176,6 +176,22 @@ describe("外壳与启停", () => {
     emitEvent("run-updated", { run: run() });
     await waitFor(() => expect(callsOf("list_bots").length).toBeGreaterThan(before));
   });
+
+  test("跨过零点（客户端一直开着）时重新取列表的今日运行数", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(2026, 10, 22, 15, 0, 0));
+      setHandlers(baseHandlers());
+      render(<App />);
+      await screen.findByRole("button", { name: "启动" });
+      const before = callsOf("list_bots").length;
+      vi.setSystemTime(new Date(2026, 10, 23, 9, 55, 0));
+      window.dispatchEvent(new Event("focus"));
+      await waitFor(() => expect(callsOf("list_bots").length).toBeGreaterThan(before));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("外观", () => {

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { botStats, type BotStats, type BotView, type RunRecord, type SkillInfo } from "../../api";
 import { fmtDur, hm, isToday, relTime, startOfDay } from "../../format";
 import { isTerminal } from "../../runs/merge";
+import { useDayStart } from "../../hooks/useDayStart";
 import { RunChip } from "../common";
 import { EmptyState, Truncate } from "../ui";
 import type { Tab } from "../Workbench";
@@ -51,7 +52,8 @@ export default function OverviewTab({
   onOpenRun: (id: string) => void;
 }) {
   const { bot } = view;
-  const local = useMemo(() => statsFromRuns(runs), [runs]);
+  const dayStart = useDayStart();
+  const local = useMemo(() => statsFromRuns(runs, dayStart), [runs, dayStart]);
   const [remote, setRemote] = useState<BotStats | null>(null);
   const statusKey = runs.map((r) => r.status).join();
 
@@ -63,7 +65,7 @@ export default function OverviewTab({
     return () => {
       alive = false;
     };
-  }, [bot.id, statusKey]);
+  }, [bot.id, statusKey, dayStart]);
 
   const todayN = remote?.today_runs ?? local.today;
   const rate = remote ? (remote.today_runs ? remote.success_rate : null) : local.rate;

@@ -18,6 +18,7 @@ import {
   type EnvRequirements,
 } from "./api";
 import { botBlockers } from "./envRules";
+import { useDayStart } from "./hooks/useDayStart";
 import BotList from "./components/BotList";
 import { ToastProvider, useToast, type BotKind } from "./components/common";
 import NewBotWizard from "./components/wizard/NewBotWizard";
@@ -114,6 +115,13 @@ function Shell() {
       setChecking(false);
     }
   }, []);
+
+  // 跨过零点：左侧「今日」运行数由后端按日期算，重新取一次
+  const dayStart = useDayStart();
+  const firstDay = useRef(dayStart);
+  useEffect(() => {
+    if (dayStart !== firstDay.current) void reload();
+  }, [dayStart, reload]);
 
   useEffect(() => {
     void reload();
