@@ -1,6 +1,6 @@
 //! 代码审查机器人的结果：Agent 最终回复的结构化 JSON → 飞书消息卡片（蓝色标题头）。
 //!
-//! 最终回复约定（模板 `code-review.md` 第 6 步）：
+//! 最终回复约定（模板 `code-review.md`「最终结果」一节）：
 //! `{"repo":"demo-service","pr":29,"title":"...","conclusion":"...","findings":[{"severity":"high|medium|low","status":"new|carried|resolved","text":"..."}],
 //!   "additions":11822,"deletions":109,"files":69,"author":"张三","url":"https://...",
 //!   "coverage":{"total":6,"reviewed":5,"skipped":[{"path":"a.sql","reason":"..."}]}}`（coverage 可缺省）
