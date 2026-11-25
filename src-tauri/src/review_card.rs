@@ -75,7 +75,71 @@ pub struct Finding {
     pub severity: Severity,
     #[serde(default)]
     pub status: FindingStatus,
+    /// 一两句话的概括（飞书卡片只显示这个）。
     pub text: String,
+    /// 以下是 PR 评论里展开的详情，都可缺省；类型写错当没有。
+    /// 小标题：一句话说清问题。
+    #[serde(default, deserialize_with = "lenient_string", skip_serializing_if = "String::is_empty")]
+    pub title: String,
+    /// 涉及的位置（`文件:行号`），可以多个。
+    #[serde(default, deserialize_with = "lenient_strings", skip_serializing_if = "Vec::is_empty")]
+    pub locations: Vec<String>,
+    /// 关键代码片段（原样，可多行）。
+    #[serde(default, deserialize_with = "lenient_string", skip_serializing_if = "String::is_empty")]
+    pub snippet: String,
+    /// 展开说明，每条一段：改动前 / 改动后 / 影响 / 场景 / 已验证 / 建议……
+    #[serde(default, deserialize_with = "lenient_strings", skip_serializing_if = "Vec::is_empty")]
+    pub details: Vec<String>,
+}
+
+/// 核对记录：审查时核对了什么、怎么核对的（PR 评论末尾展示）。
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Checks {
+    /// 风险点与结论：每条「检查了什么 → 结论」。
+    #[serde(default, deserialize_with = "lenient_strings", skip_serializing_if = "Vec::is_empty")]
+    pub risks: Vec<String>,
+    /// 覆盖范围说明：按模块 / 规则组列审了哪些文件。
+    #[serde(default, deserialize_with = "lenient_strings", skip_serializing_if = "Vec::is_empty")]
+    pub scope: Vec<String>,
+    /// 实际执行：跑过的样例脚本、命令和结果。
+    #[serde(default, deserialize_with = "lenient_strings", skip_serializing_if = "Vec::is_empty")]
+    pub executed: Vec<String>,
+}
+
+impl Checks {
+    pub fn is_empty(&self) -> bool {
+        self.risks.is_empty() && self.scope.is_empty() && self.executed.is_empty()
+    }
+}
+
+fn lenient_string<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    Ok(match Value::deserialize(d)? {
+        Value::String(s) => s,
+        Value::Null => String::new(),
+        Value::Array(a) => a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join("\n"),
+        v => v.to_string(),
+    })
+}
+
+/// 字符串数组；写成单个字符串也认，非字符串元素忽略。
+fn lenient_strings<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+    Ok(match Value::deserialize(d)? {
+        Value::String(s) if !s.trim().is_empty() => vec![s],
+        Value::Array(a) => a.into_iter().filter_map(|v| v.as_str().map(str::to_string)).filter(|s| !s.trim().is_empty()).collect(),
+        _ => Vec::new(),
+    })
+}
+
+fn lenient_findings<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<Finding>, D::Error> {
+    Ok(match Value::deserialize(d)? {
+        Value::Array(a) => a.into_iter().filter_map(|v| serde_json::from_value(v).ok()).collect(),
+        _ => Vec::new(),
+    })
+}
+
+fn lenient_checks<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Checks>, D::Error> {
+    let v = Value::deserialize(d)?;
+    Ok(serde_json::from_value::<Checks>(v).ok().filter(|c| !c.is_empty()))
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -106,6 +170,12 @@ pub struct ReviewResult {
     /// 写坏了（类型不对）当没有，不影响整份结果的解析。
     #[serde(default, deserialize_with = "lenient_coverage", skip_serializing_if = "Option::is_none")]
     pub coverage: Option<Coverage>,
+    /// 次要发现（低严重度 / 待确认 / 建议项），PR 评论里单列一节；不计入「N 项发现」。
+    #[serde(default, deserialize_with = "lenient_findings", skip_serializing_if = "Vec::is_empty")]
+    pub minor: Vec<Finding>,
+    /// 核对记录（可选）。
+    #[serde(default, deserialize_with = "lenient_checks", skip_serializing_if = "Option::is_none")]
+    pub checks: Option<Checks>,
 }
 
 /// 跳过没审的文件。
@@ -167,8 +237,18 @@ impl ReviewResult {
         for s in [&mut r.repo, &mut r.title, &mut r.conclusion, &mut r.author, &mut r.url] {
             *s = redact(s);
         }
-        for f in &mut r.findings {
-            f.text = redact(&f.text);
+        for f in r.findings.iter_mut().chain(r.minor.iter_mut()) {
+            for s in [&mut f.text, &mut f.title, &mut f.snippet] {
+                *s = redact(s);
+            }
+            for s in f.locations.iter_mut().chain(f.details.iter_mut()) {
+                *s = redact(s);
+            }
+        }
+        if let Some(c) = &mut r.checks {
+            for s in c.risks.iter_mut().chain(c.scope.iter_mut()).chain(c.executed.iter_mut()) {
+                *s = redact(s);
+            }
         }
         if let Some(c) = &mut r.coverage {
             for s in &mut c.skipped {
@@ -249,8 +329,21 @@ fn status_note(f: &Finding, incremental: bool) -> &'static str {
     }
 }
 
+/// 卡片里一条发现的文字：有小标题时「标题：概括」，否则只有概括。
+pub fn finding_summary(f: &Finding) -> String {
+    let title = f.title.trim().trim_end_matches(['。', '：', ':']);
+    let text = f.text.trim();
+    if title.is_empty() || text.starts_with(title) {
+        text.to_string()
+    } else if text.is_empty() {
+        title.to_string()
+    } else {
+        format!("{title}：{text}")
+    }
+}
+
 fn finding_line(f: &Finding, incremental: bool) -> String {
-    format!("- **[{}]** {}{}", f.severity.label(), status_note(f, incremental), one_line(&f.text, FINDING_MAX))
+    format!("- **[{}]** {}{}", f.severity.label(), status_note(f, incremental), one_line(&finding_summary(f), FINDING_MAX))
 }
 
 fn scale_line(r: &ReviewResult) -> String {
@@ -310,6 +403,9 @@ fn body_lines(r: &ReviewResult, link: bool) -> Vec<String> {
             lines.push(finding_line(f, incremental));
         }
     }
+    if let Some(m) = minor_note(r) {
+        lines.push(m);
+    }
     lines.push(scale_line(r));
     if let Some(c) = &r.coverage {
         lines.push(coverage_line(c));
@@ -337,8 +433,13 @@ fn card_finding(i: usize, f: &Finding, incremental: bool) -> String {
         severity_color(f.severity),
         f.severity.label(),
         status_note(f, incremental),
-        one_line(&f.text, FINDING_MAX)
+        one_line(&finding_summary(f), FINDING_MAX)
     )
+}
+
+/// 次要发现的提示（卡片只提数量，详情在 PR 评论）。
+fn minor_note(r: &ReviewResult) -> Option<String> {
+    (!r.minor.is_empty()).then(|| format!("另有 {} 项次要建议，见 PR 评论", r.minor.len()))
 }
 
 /// 灰色概要行：`jev-rpa #34 · 作者 张三 · +2247 / -173 · 50 个文件`。
@@ -406,7 +507,8 @@ pub fn render(r: &ReviewResult, comment: &CommentOutcome) -> Value {
         );
         els.push(md(lines.join("\n")));
     }
-    let notes: Vec<String> = r.coverage.as_ref().map(coverage_line).into_iter().chain(comment_note(comment)).collect();
+    let notes: Vec<String> =
+        minor_note(r).into_iter().chain(r.coverage.as_ref().map(coverage_line)).chain(comment_note(comment)).collect();
     if !notes.is_empty() {
         els.push(hr);
         els.push(json!({ "tag": "note", "elements": [{ "tag": "plain_text", "content": notes.join(" · ") }] }));
@@ -514,6 +616,63 @@ mod tests {
         assert_eq!(r.findings[0].severity, Severity::High);
         assert_eq!(r.findings[0].status, FindingStatus::Carried);
         assert_eq!(r.findings[1].status, FindingStatus::New);
+    }
+
+    #[test]
+    fn parse_detailed_fields_lenient() {
+        let r = parse(
+            r#"{"repo":"a","pr":1,"findings":[
+              {"severity":"high","text":"概括","title":"已退款仍发通知","locations":"a.py:3","snippet":["l1","l2"],"details":["改动前：x",3,"建议：y"]},
+              {"severity":"medium","text":"z","locations":{"bad":1},"details":null}],
+            "minor":[{"severity":"low","text":"m"},{"severity":"致命","text":"写错的跳过"}],
+            "checks":{"risks":["幂等 → 没问题"],"executed":"跑了 30 条样例"}}"#,
+        )
+        .unwrap();
+        let f = &r.findings[0];
+        assert_eq!(f.title, "已退款仍发通知");
+        assert_eq!(f.locations, vec!["a.py:3"]);
+        assert_eq!(f.snippet, "l1\nl2");
+        assert_eq!(f.details, vec!["改动前：x", "建议：y"]);
+        assert!(r.findings[1].locations.is_empty() && r.findings[1].details.is_empty());
+        assert_eq!(r.minor.len(), 1, "写错的次要项单独跳过，不影响整份结果");
+        let c = r.checks.as_ref().unwrap();
+        assert_eq!((c.risks.len(), c.executed.clone()), (1, vec!["跑了 30 条样例".to_string()]));
+        // checks 写坏 / 全空：当没有
+        assert!(parse(r#"{"repo":"a","pr":1,"checks":"x"}"#).unwrap().checks.is_none());
+        assert!(parse(r#"{"repo":"a","pr":1,"checks":{}}"#).unwrap().checks.is_none());
+        // 旧格式序列化后不多出新字段（存的上一轮结果保持原样）
+        let old = parse(r#"{"repo":"a","pr":1,"findings":[{"severity":"low","text":"x"}]}"#).unwrap();
+        let s = serde_json::to_string(&old).unwrap();
+        assert!(s.contains(r#""findings":[{"severity":"low","status":"new","text":"x"}]"#), "{s}");
+        assert!(!s.contains("minor") && !s.contains("checks"), "{s}");
+    }
+
+    #[test]
+    fn card_uses_title_with_summary_and_notes_minor_count() {
+        let r = parse(
+            r#"{"repo":"a","pr":1,"findings":[
+              {"severity":"high","title":"已退款仍发通知。","text":"状态没回写，会重复通知"},
+              {"severity":"medium","title":"慢回复","text":"慢回复重新起算太早"}],
+            "minor":[{"severity":"low","text":"m"}],"url":"https://gitee.com/a/a/pulls/1"}"#,
+        )
+        .unwrap();
+        let text = blocks(&render(&r, &CommentOutcome::Skipped)).join("\n");
+        assert!(text.contains("**[高]**</font> 已退款仍发通知：状态没回写，会重复通知"), "{text}");
+        assert!(text.contains("**[中]**</font> 慢回复重新起算太早"), "text 以标题开头时不重复：{text}");
+        assert!(text.contains("[注] 另有 1 项次要建议，见 PR 评论"), "{text}");
+        assert!(render_text(&r, &CommentOutcome::Skipped).contains("另有 1 项次要建议，见 PR 评论"));
+    }
+
+    #[test]
+    fn redacted_covers_detail_fields() {
+        let secret = "ghp_abcdefghijklmnopqrstuvwxyz0123456789";
+        let r = parse(&format!(
+            r#"{{"repo":"a","pr":1,"findings":[{{"severity":"high","text":"t","title":"{secret}","snippet":"token = \"{secret}\"","locations":["{secret}"],"details":["{secret}"]}}],
+            "minor":[{{"severity":"low","text":"{secret}"}}],"checks":{{"risks":["{secret}"],"scope":["{secret}"],"executed":["{secret}"]}}}}"#
+        ))
+        .unwrap();
+        let s = serde_json::to_string(&r.redacted()).unwrap();
+        assert!(!s.contains(secret), "{s}");
     }
 
     #[test]

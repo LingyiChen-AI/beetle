@@ -72,8 +72,96 @@ fn clip(s: &str, max: usize) -> String {
     out
 }
 
-/// 评论正文（markdown）。传进来之前应已 `redacted()`。结论和发现不截短（单条超长才截）。
+/// 评论正文总长上限：GitHub 评论最多 65536 字符，Gitee 也有类似限制，留余量。
+const BODY_MAX: usize = 60_000;
+/// 精简模式下每段详情最多多少字。
+const DETAIL_COMPACT_MAX: usize = 300;
+
+/// 按位置的扩展名猜代码块语言（猜不到就不写）。
+fn snippet_lang(locations: &[String]) -> &'static str {
+    let Some(loc) = locations.first() else { return "" };
+    let path = loc.split([':', ' ', '（', '(']).next().unwrap_or("");
+    match path.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).as_deref() {
+        Some("go") => "go",
+        Some("py") => "python",
+        Some("rs") => "rust",
+        Some("ts") => "ts",
+        Some("tsx") => "tsx",
+        Some("js" | "mjs" | "cjs") => "js",
+        Some("jsx") => "jsx",
+        Some("vue") => "vue",
+        Some("java") => "java",
+        Some("kt") => "kotlin",
+        Some("sql") => "sql",
+        Some("sh") => "bash",
+        Some("yaml" | "yml") => "yaml",
+        Some("json") => "json",
+        Some("toml") => "toml",
+        _ => "",
+    }
+}
+
+fn one_line(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// 一条主要发现：小标题 → 位置 → 概括 → 代码片段 → 展开说明。`compact` 时不放代码片段、详情截短（正文超长时用）。
+fn finding_block(s: &mut String, i: usize, f: &crate::review_card::Finding, incremental: bool, compact: bool) {
+    let title = f.title.trim();
+    let text = clip(&f.text, FINDING_MAX);
+    let head = if title.is_empty() { clip(&one_line(&text), 80) } else { one_line(title) };
+    s.push_str(&format!("#### {i}. [{}] {head}{}\n\n", f.severity.label(), status_note(f.status, incremental)));
+    if !f.locations.is_empty() {
+        let locs: Vec<String> = f.locations.iter().map(|l| format!("`{}`", one_line(l).replace('`', "'"))).collect();
+        s.push_str(&format!("{}\n\n", locs.join(" · ")));
+    }
+    if !text.is_empty() && (!title.is_empty() || head != one_line(&text)) {
+        s.push_str(&format!("{text}\n\n"));
+    }
+    let snippet = f.snippet.trim_matches('\n');
+    if !compact && !snippet.trim().is_empty() {
+        let fence = if snippet.contains("```") { "````" } else { "```" };
+        s.push_str(&format!("{fence}{}\n{}\n{fence}\n\n", snippet_lang(&f.locations), clip(snippet, 4000)));
+    }
+    if !f.details.is_empty() {
+        for d in &f.details {
+            let d = if compact { clip(d, DETAIL_COMPACT_MAX) } else { clip(d, FINDING_MAX) };
+            s.push_str(&format!("- {}\n", d.replace('\n', "\n  ")));
+        }
+        s.push('\n');
+    }
+}
+
+fn list(s: &mut String, heading: &str, items: &[String], compact: bool) {
+    if items.is_empty() {
+        return;
+    }
+    s.push_str(&format!("**{heading}**\n\n"));
+    for it in items {
+        let it = if compact { clip(it, DETAIL_COMPACT_MAX) } else { clip(it, FINDING_MAX) };
+        s.push_str(&format!("- {}\n", it.replace('\n', "\n  ")));
+    }
+    s.push('\n');
+}
+
+/// 评论正文（markdown）。传进来之前应已 `redacted()`。
+/// 结构：标题 → 结论 → 主要发现（每条带位置、代码片段、展开说明）→ 次要 → 上一轮已处理 → 核对记录 → 底注。
+/// 超过平台长度上限时去掉代码片段、截短详情；还超就硬截断。
 pub fn comment_body(r: &ReviewResult) -> String {
+    let full = build_body(r, false);
+    if full.chars().count() <= BODY_MAX {
+        return full;
+    }
+    let compact = build_body(r, true);
+    if compact.chars().count() <= BODY_MAX {
+        return compact;
+    }
+    let mut s: String = compact.chars().take(BODY_MAX - 200).collect();
+    s.push_str("\n\n…（评论太长已截断，完整结果见客户端「运行日志」）\n");
+    s
+}
+
+fn build_body(r: &ReviewResult, compact: bool) -> String {
     let open = r.open_findings();
     let resolved = r.resolved_findings();
     let incremental = r.findings.iter().any(|f| f.status != FindingStatus::New);
@@ -87,19 +175,53 @@ pub fn comment_body(r: &ReviewResult) -> String {
         s.push_str(&format!("**结论**：{}\n\n", r.conclusion.trim()));
     }
     if !open.is_empty() {
-        s.push_str(&format!("#### 发现 {} 项\n\n", open.len()));
+        s.push_str(&format!("### 主要发现（{} 项）\n\n", open.len()));
         for (i, f) in open.iter().enumerate() {
-            let text = clip(&f.text, FINDING_MAX).replace('\n', "\n   ");
-            s.push_str(&format!("{}. **[{}]** {}{}\n", i + 1, f.severity.label(), status_note(f.status, incremental), text));
+            finding_block(&mut s, i + 1, f, incremental, compact);
+        }
+    }
+    if !r.minor.is_empty() {
+        s.push_str(&format!("### 次要（{} 项）\n\n", r.minor.len()));
+        for f in &r.minor {
+            let title = f.title.trim();
+            let body = clip(&f.text, if compact { DETAIL_COMPACT_MAX } else { FINDING_MAX }).replace('\n', " ");
+            let head = if title.is_empty() { body.clone() } else { format!("**{}**：{body}", one_line(title)) };
+            let locs = if f.locations.is_empty() {
+                String::new()
+            } else {
+                format!("（{}）", f.locations.iter().map(|l| format!("`{}`", one_line(l).replace('`', "'"))).collect::<Vec<_>>().join("、"))
+            };
+            s.push_str(&format!("- [{}] {head}{locs}\n", f.severity.label()));
         }
         s.push('\n');
     }
     if !resolved.is_empty() {
-        s.push_str(&format!("#### 上一轮已处理 {} 项\n\n", resolved.len()));
+        s.push_str(&format!("### 上一轮已处理（{} 项）\n\n", resolved.len()));
         for f in &resolved {
             s.push_str(&format!("- ~~[{}] {}~~\n", f.severity.label(), clip(&f.text, FINDING_MAX).replace('\n', " ")));
         }
         s.push('\n');
+    }
+    let checks = r.checks.clone().unwrap_or_default();
+    if !checks.is_empty() || r.coverage.is_some() {
+        s.push_str("### 核对记录\n\n");
+        list(&mut s, "风险点与结论", &checks.risks, compact);
+        let mut scope = Vec::new();
+        if let Some(c) = &r.coverage {
+            let mut line = format!("审查覆盖 {}/{} 个文件", c.reviewed, c.total);
+            if !c.skipped.is_empty() {
+                let skipped: Vec<String> = c
+                    .skipped
+                    .iter()
+                    .map(|f| if f.reason.trim().is_empty() { format!("`{}`", f.path) } else { format!("`{}`（{}）", f.path, one_line(&f.reason)) })
+                    .collect();
+                line.push_str(&format!("，跳过 {} 个：{}", c.skipped.len(), skipped.join("、")));
+            }
+            scope.push(line);
+        }
+        scope.extend(checks.scope.iter().cloned());
+        list(&mut s, "覆盖范围", &scope, compact);
+        list(&mut s, "实际执行", &checks.executed, compact);
     }
     let mut meta = vec![format!("规模 +{} / -{}，{} 个文件", r.additions, r.deletions, r.files)];
     if let Some(c) = &r.coverage {
@@ -207,11 +329,67 @@ mod tests {
     #[test]
     fn body_lists_findings_full_text_with_meta_footer() {
         let b = comment_body(&result());
-        assert!(b.starts_with("### 代码审查：2 项发现\n\n**结论**：有一处并发问题。\n建议先修。\n\n#### 发现 2 项\n\n"), "{b}");
-        assert!(b.contains("1. **[高]** （上一轮遗留，未处理）领取接口没有加锁\n   c.go:88\n"), "{b}");
-        assert!(b.contains("2. **[低]** （新发现）日志打印了完整请求体 a.go:12\n"), "{b}");
-        assert!(b.contains("#### 上一轮已处理 1 项\n\n- ~~[中] 超时没有重试 d.go:7~~\n"), "{b}");
+        assert!(b.starts_with("### 代码审查：2 项发现\n\n**结论**：有一处并发问题。\n建议先修。\n\n### 主要发现（2 项）\n\n"), "{b}");
+        // 旧格式（只有 text）：小标题用 text 压成一行
+        assert!(b.contains("#### 1. [高] 领取接口没有加锁 c.go:88（上一轮遗留，未处理）\n\n"), "{b}");
+        assert!(b.contains("#### 2. [低] 日志打印了完整请求体 a.go:12（新发现）\n\n"), "{b}");
+        assert!(b.contains("### 上一轮已处理（1 项）\n\n- ~~[中] 超时没有重试 d.go:7~~\n"), "{b}");
+        assert!(b.contains("### 核对记录\n\n**覆盖范围**\n\n- 审查覆盖 6/6 个文件\n"), "{b}");
         assert!(b.contains("<sub>规模 +120 / -9，6 个文件 · 审查覆盖 6/6 个文件 · 提交 0123456789 · 由 Beetle 代码审查机器人生成</sub>"), "{b}");
+    }
+
+    fn detailed() -> ReviewResult {
+        parse(
+            r#"{"repo":"demo","pr":3,"conclusion":"不建议合并。",
+            "findings":[{"severity":"high","status":"new","title":"已退款仍会发通知",
+              "text":"退款成功后状态没回写，下一轮又发一次通知。",
+              "locations":["flows/rules.py:248","flows/page.py:968"],
+              "snippet":"def intercept(x):\n    return x.done",
+              "details":["改动前：退款后直接结束。","改动后：只看 done 字段。\n第二行","建议：先查退款状态。"]}],
+            "minor":[{"severity":"low","title":"日志太多","text":"每单打印两次","locations":["a.py:1"]},
+                     {"severity":"low","text":"变量名可读性一般"}],
+            "checks":{"risks":["幂等：同一单重跑 → 不会重复退款"],"scope":["后端 12 个文件，前端 3 个文件"],
+                      "executed":["跑了 40 条样例：命中 3 条误判"]},
+            "coverage":{"total":15,"reviewed":14,"skipped":[{"path":"x.bin","reason":"二进制"}]},
+            "additions":10,"deletions":2,"files":15}"#,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn body_renders_detailed_findings_minor_and_checks() {
+        let b = comment_body(&detailed());
+        assert!(b.contains("#### 1. [高] 已退款仍会发通知\n\n`flows/rules.py:248` · `flows/page.py:968`\n\n退款成功后状态没回写，下一轮又发一次通知。\n\n"), "{b}");
+        assert!(b.contains("```python\ndef intercept(x):\n    return x.done\n```\n\n"), "{b}");
+        assert!(b.contains("- 改动前：退款后直接结束。\n- 改动后：只看 done 字段。\n  第二行\n- 建议：先查退款状态。\n"), "{b}");
+        assert!(b.contains("### 次要（2 项）\n\n- [低] **日志太多**：每单打印两次（`a.py:1`）\n- [低] 变量名可读性一般\n"), "{b}");
+        assert!(b.contains("**风险点与结论**\n\n- 幂等：同一单重跑 → 不会重复退款\n"), "{b}");
+        assert!(b.contains("**覆盖范围**\n\n- 审查覆盖 14/15 个文件，跳过 1 个：`x.bin`（二进制）\n- 后端 12 个文件，前端 3 个文件\n"), "{b}");
+        assert!(b.contains("**实际执行**\n\n- 跑了 40 条样例：命中 3 条误判\n"), "{b}");
+    }
+
+    #[test]
+    fn body_too_long_drops_snippets_then_truncates() {
+        let mut r = detailed();
+        r.findings[0].snippet = "x".repeat(3000);
+        r.findings[0].details = vec!["说明".repeat(900); 40];
+        let b = comment_body(&r);
+        assert!(b.chars().count() <= 60_000, "{}", b.chars().count());
+        assert!(!b.contains("```"), "超长时去掉代码片段");
+        assert!(b.contains("由 Beetle 代码审查机器人生成"), "精简后底注还在");
+        // 精简后仍超长：硬截断并提示
+        r.findings = vec![r.findings[0].clone(); 300];
+        let b = comment_body(&r);
+        assert!(b.chars().count() <= 60_000);
+        assert!(b.ends_with("…（评论太长已截断，完整结果见客户端「运行日志」）\n"));
+    }
+
+    #[test]
+    fn snippet_lang_from_location() {
+        assert_eq!(snippet_lang(&["a/b.go:12".into()]), "go");
+        assert_eq!(snippet_lang(&["src/x.tsx:3-9".into()]), "tsx");
+        assert_eq!(snippet_lang(&["README（第 3 行）".into()]), "");
+        assert_eq!(snippet_lang(&[]), "");
     }
 
     #[test]

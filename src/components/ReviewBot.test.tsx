@@ -147,6 +147,20 @@ describe("审查结果卡片", () => {
     expect(parseReviewReply(JSON.stringify(REVIEW))).toEqual(REVIEW);
   });
 
+  test("详细格式：发现显示「标题：概括」，次要建议和覆盖合成一行底注", () => {
+    const r: ReviewResult = {
+      ...REVIEW,
+      findings: [{ severity: "high", title: "已退款仍发通知。", text: "状态没回写会重复通知", locations: ["a.py:3"], details: ["建议：先查状态"] }],
+      minor: [{ severity: "low", text: "日志太多" }],
+      coverage: { total: 6, reviewed: 6, skipped: [] },
+    };
+    const lines = cardLines(r);
+    expect(lines.find((l) => l.kind === "finding")?.text).toBe("已退款仍发通知：状态没回写会重复通知");
+    expect(lines.filter((l) => l.kind === "divider")).toHaveLength(3);
+    expect(lines.find((l) => l.kind === "note")?.text).toBe("另有 1 项次要建议，见 PR 评论 · 审查覆盖：6/6 个文件");
+    expect(parseReviewReply(JSON.stringify(r))).toEqual(r);
+  });
+
   test("运行日志里代码审查运行的回复按卡片样式预览", async () => {
     const done = run({ status: "replied", finished_at: Date.now(), text: REVIEW.url as string, final_reply: JSON.stringify(REVIEW) });
     setHandlers(

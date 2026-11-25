@@ -8,6 +8,11 @@ export interface ReviewFinding {
   severity: Severity;
   status?: FindingStatus;
   text: string;
+  /** 以下是 PR 评论里展开的详情（可缺省）；卡片只用 title 和 text */
+  title?: string;
+  locations?: string[];
+  snippet?: string;
+  details?: string[];
 }
 
 export interface ReviewResult {
@@ -23,6 +28,9 @@ export interface ReviewResult {
   url?: string;
   head_sha?: string;
   coverage?: { total?: number; reviewed?: number; skipped?: { path: string; reason?: string }[] };
+  /** 次要建议（PR 评论单列，卡片只提数量） */
+  minor?: ReviewFinding[];
+  checks?: { risks?: string[]; scope?: string[]; executed?: string[] };
 }
 
 const SEVERITY_LABEL: Record<Severity, string> = { high: "高", medium: "中", low: "低" };
@@ -46,6 +54,15 @@ export function parseReviewReply(text: string | null | undefined): ReviewResult 
 }
 
 const statusOf = (f: ReviewFinding): FindingStatus => f.status ?? "new";
+
+/** 卡片里一条发现的文字：有小标题时「标题：概括」，否则只有概括（和后端 finding_summary 一致）。 */
+export function findingSummary(f: ReviewFinding): string {
+  const title = (f.title ?? "").trim().replace(/[。：:]+$/, "");
+  const text = f.text.trim();
+  if (!title || text.startsWith(title)) return text;
+  if (!text) return title;
+  return `${title}：${text}`;
+}
 
 /** 还没处理的发现（新发现 + 上一轮遗留），按严重度从高到低，同级保持原顺序。 */
 export function openFindings(r: ReviewResult): ReviewFinding[] {
@@ -107,13 +124,17 @@ export function cardLines(r: ReviewResult): CardLine[] {
     lines.push({ kind: "heading", text: "未发现问题" });
   } else {
     lines.push({ kind: "heading", text: `发现 ${open.length} 项` });
-    open.forEach((f, i) => lines.push({ kind: "finding", index: i + 1, severity: f.severity, text: statusNote(f, incremental) + oneLine(f.text, FINDING_MAX) }));
+    open.forEach((f, i) => lines.push({ kind: "finding", index: i + 1, severity: f.severity, text: statusNote(f, incremental) + oneLine(findingSummary(f), FINDING_MAX) }));
   }
   const resolved = r.findings.filter((f) => statusOf(f) === "resolved");
   if (resolved.length > 0) {
     lines.push({ kind: "heading", text: `上一轮已处理 ${resolved.length} 项` });
     for (const f of resolved) lines.push({ kind: "resolved", severity: f.severity, text: oneLine(f.text, FINDING_MAX) });
   }
+  // 底注：次要建议数、审查覆盖（和后端卡片一样合成一行）
+  const notes: string[] = [];
+  const minor = Array.isArray(r.minor) ? r.minor.length : 0;
+  if (minor > 0) notes.push(`另有 ${minor} 项次要建议，见 PR 评论`);
   const c = r.coverage;
   if (c && typeof c.total === "number") {
     let cov = `审查覆盖：${c.reviewed ?? 0}/${c.total} 个文件`;
@@ -122,8 +143,9 @@ export function cardLines(r: ReviewResult): CardLine[] {
       const shown = skipped.slice(0, 3).map((f) => (f.reason?.trim() ? `${oneLine(f.path, 120)}:${oneLine(f.reason, 60)}` : oneLine(f.path, 120)));
       cov += `，跳过 ${skipped.length} 个（${shown.join("；")}${skipped.length > 3 ? " 等" : ""}）`;
     }
-    lines.push({ kind: "divider", text: "" }, { kind: "note", text: cov });
+    notes.push(cov);
   }
+  if (notes.length > 0) lines.push({ kind: "divider", text: "" }, { kind: "note", text: notes.join(" · ") });
   if (r.url?.trim()) lines.push({ kind: "link", text: r.url.trim() });
   return lines;
 }
